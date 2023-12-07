@@ -15,8 +15,8 @@ enable.rmempty = false
 enable = e:option(Flag, "clean", translate("Clean Before Update"))
 enable.rmempty = false
 
-ipv6 = e:option(Flag,"ipv4",translate("Enabled IPv4"))
-ipv6.rmempty=false
+ipv4 = e:option(Flag,"ipv4",translate("Enabled IPv4"))
+ipv4.rmempty=false
 
 ipv6 = e:option(Flag,"ipv6",translate("Enabled IPv6"))
 ipv6.rmempty=false
@@ -29,7 +29,7 @@ iface = e:option(ListValue, "interface", translate("WAN-IP Source"), translate("
 iface:value("", translate("Select WAN-IP Source"))
 iface:value("internet")
 iface:value("wan")
-iface.rmempty = true
+iface.rmempty = false
 
 iface6 = e:option(ListValue, "interface6", translate("WAN6-IP Source"),translate("Select the WAN6-IP Source for AliDDNS, like wan6/internet"))
 iface6:value("",translate("Select WAN6-IP Source"))
