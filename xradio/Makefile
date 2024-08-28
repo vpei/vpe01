@@ -8,8 +8,10 @@ PKG_LICENSE_FILES:=
 
 PKG_SOURCE_URL:=https://github.com/fifteenhex/xradio.git
 PKG_SOURCE_PROTO:=git
-PKG_SOURCE_DATE:=2023-05-10
-PKG_SOURCE_VERSION:=a2dd9cd8b1a8b8a8af8aaff90dfaa65fcf783e26
+PKG_SOURCE_DATE:=2021-03-06
+PKG_SOURCE_VERSION:=c909de15239a94e941ae5985991cdb68d8e9f5c9
+# PKG_SOURCE_DATE:=2020-03-21
+# PKG_SOURCE_VERSION:=8965ea55ddfd862ee76384913f82e6b69628cd27
 PKG_HASH:=3ead40075330178d0e1840fa01d382629001bfe83748f6ee3d51d1c99e0da4c4
 
 PKG_BUILD_PARALLEL:=1
@@ -25,7 +27,7 @@ endef
 $(eval $(call Download,xr819))
 
 define KernelPackage/xradio
-  SUBMENU:=Wireless Drivers Test-xr819
+  SUBMENU:=Wireless Drivers
   TITLE:=Xradio xr819 test wifi-drivers support
   DEPENDS:=@TARGET_sunxi +kmod-mac80211 +wpad-mini
   KCONFIG:= \

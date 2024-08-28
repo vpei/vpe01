@@ -18,12 +18,13 @@ Signed-off-by: Georgi Valkov <gvalkov@abv.bg>
 
 --- a/bh.c
 +++ b/bh.c
-@@ -565,7 +565,7 @@
+@@ -565,7 +565,8 @@
  		goto out;
  	}
  
 -	ret = 1;
-+	ret = 1 && *nextlen; /* if *nextlen is 0, there are no more packets to receive */
++	/* if *nextlen is 0, there are no more packets to receive */
++	ret = 1 && *nextlen;
  
  out:
  	/* Reclaim the SKB buffer */
@@ -67,7 +68,7 @@ Signed-off-by: Georgi Valkov <gvalkov@abv.bg>
  					break;
 --- a/sdio.c
 +++ b/sdio.c
-@@ -147,8 +166,10 @@
+@@ -136,8 +136,10 @@
  	int irq;
  
  	of_id = of_match_node(xradio_sdio_of_match_table, np);
