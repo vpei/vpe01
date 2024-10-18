@@ -1,4 +1,7 @@
 skip-domain:
   - '+.apple.com'
   - Mijia Cloud
-  - '+.jd.com'
+  - dlg.io.mi.com
+  - +.oray.com
+  - +.sunlogin.net
+  #- geosite:cn

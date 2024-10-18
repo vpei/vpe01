@@ -10,8 +10,7 @@ local fs = require "luci.openclash"
 local uci = require "luci.model.uci".cursor()
 
 m = SimpleForm("openclash", translate("Other Rule Providers List"))
-m.description=translate("Rule Project:").." ConnersHua ( https://github.com/DivineEngine/Profiles )<br/>"..
-translate("Rule Project:").." lhie1 ( https://github.com/dler-io/Rules )<br/>"..
+m.description=translate("Rule Project:").." lhie1 ( https://github.com/dler-io/Rules )<br/>"..
 translate("Rule Project:").." ACL4SSR ( https://github.com/ACL4SSR/ACL4SSR/tree/master )"
 m.reset = false
 m.submit = false
@@ -26,7 +25,8 @@ o = a:option(Button, "Refresh", " ")
 o.inputtitle = translate("Refresh Page")
 o.inputstyle = "apply"
 o.write = function()
-  HTTP.redirect(DISP.build_url("admin", "services", "openclash", "rule-providers-manage"))
+   SYS.call("rm -rf /tmp/rule_providers_name 2>/dev/null")
+   HTTP.redirect(DISP.build_url("admin", "services", "openclash", "rule-providers-manage"))
 end
 
 o = a:option(Button, "Apply", " ")
@@ -80,7 +80,7 @@ form=SimpleForm("filelist")
 form.reset=false
 form.submit=false
 tb=form:section(Table,e)
-nu=tb:option(DummyValue,"num",translate("Order Number"))
+nu=tb:option(DummyValue,"num",translate("Serial Number"))
 st=tb:option(DummyValue,"exist",translate("State"))
 st.template="openclash/cfg_check"
 tp=tb:option(DummyValue,"rule_type",translate("Rule Type"))
