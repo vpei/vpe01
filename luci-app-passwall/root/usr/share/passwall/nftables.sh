@@ -290,10 +290,10 @@ load_acl() {
 			}
 
 			_acl_list=${TMP_ACL_PATH}/${sid}/rule_list
-			[ $use_interface = "1" ] && _acl_list=${TMP_ACL_PATH}/${sid}/interface_list
+			[ "$use_interface" = "1" ] && _acl_list=${TMP_ACL_PATH}/${sid}/interface_list
 
 			for i in $(cat $_acl_list); do
-				if [ $use_interface = "0" ]; then
+				if [ "$use_interface" = "0" ]; then
 					if [ -n "$(echo ${i} | grep '^iprange:')" ]; then
 						_iprange=$(echo ${i} | sed 's#iprange:##g')
 						_ipt_source=$(factor ${_iprange} "ip saddr")
@@ -1330,6 +1330,7 @@ flush_nftset_reload() {
 	del_firewall_rule
 	flush_table
 	rm -rf /tmp/singbox_passwall*
+	rm -rf /tmp/etc/passwall_tmp/smartdns*
 	rm -rf /tmp/etc/passwall_tmp/dnsmasq*
 	/etc/init.d/passwall reload
 }
