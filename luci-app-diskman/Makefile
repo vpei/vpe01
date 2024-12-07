@@ -2,14 +2,14 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-diskman
 LUCI_NAME:=luci-app-diskman
-PKG_VERSION:=v0.2.13
-PKG_RELEASE:=beta
+PKG_VERSION:=0.2.13
+PKG_RELEASE:=1
 PKG_MAINTAINER:=lisaac <https://github.com/lisaac/luci-app-diskman>
 PKG_LICENSE:=AGPL-3.0
 
 LUCI_TITLE:=Disk Manager interface for LuCI
 
-LUCI_DEPENDS:=+e2fsprogs +parted +smartmontools +blkid \
+LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid \
 	+kmod-fs-vfat +dosfstools +kmod-fs-msdos +kmod-nls-base +kmod-nls-utf8 +kmod-nls-cp932 +kmod-nls-cp936 +kmod-nls-cp950 \
 	+kmod-fs-exfat +exfat-mkfs +exfat-fsck \
 	+kmod-fs-ntfs \
@@ -29,15 +29,15 @@ define Package/$(PKG_NAME)/config
 config PACKAGE_$(PKG_NAME)_INCLUDE_ntfs_3g_utils
 	depends on PACKAGE_$(PKG_NAME)
 	bool "Include ntfs-3g-utils"
-	default y
+	default n
 config PACKAGE_$(PKG_NAME)_INCLUDE_btrfs_progs
 	depends on PACKAGE_$(PKG_NAME)
 	bool "Include btrfs-progs"
-	default y
+	default n
 config PACKAGE_$(PKG_NAME)_INCLUDE_lsblk
 	depends on PACKAGE_$(PKG_NAME)
 	bool "Include lsblk"
-	default y
+	default n
 config PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
 	depends on PACKAGE_$(PKG_NAME)
 	bool "Include mdadm"
