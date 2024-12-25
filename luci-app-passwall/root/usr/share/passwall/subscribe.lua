@@ -264,7 +264,7 @@ do
 						currentNode = _node_id and uci:get_all(appname, _node_id) or nil,
 						remarks = "分流" .. e.remarks .. "节点",
 						set = function(o, server)
-							if not server then server = "nil" end
+							if not server then server = "" end
 							uci:set(appname, node_id, e[".name"], server)
 							o.newNodeId = server
 						end
@@ -327,6 +327,23 @@ do
 				}
 			end
 		else
+			--前置代理节点
+			local currentNode = uci:get_all(appname, node_id) or nil
+			if currentNode and currentNode.preproxy_node then
+				CONFIG[#CONFIG + 1] = {
+					log = true,
+					id = node_id,
+					remarks = "节点[" .. node_id .. "]前置代理节点",
+					currentNode = uci:get_all(appname, currentNode.preproxy_node) or nil,
+					set = function(o, server)
+						uci:set(appname, node_id, "preproxy_node", server)
+						o.newNodeId = server
+					end,
+					delete = function(o)
+						uci:delete(appname, node_id, "preproxy_node")
+					end
+				}
+			end
 			--落地节点
 			local currentNode = uci:get_all(appname, node_id) or nil
 			if currentNode and currentNode.to_node then
@@ -449,7 +466,12 @@ local function processData(szType, content, add_mode, add_from)
 		elseif result.type == "Xray" and info.net == "tcp" then
 			info.net = "raw"
 		end
-		result.transport = info.net
+		if info.net == 'h2' or info.net == 'http' then
+			info.net = "http"
+			result.transport = (result.type == "Xray") and "xhttp" or "http"
+		else
+			result.transport = info.net
+		end
 		if info.net == 'ws' then
 			result.ws_host = info.host
 			result.ws_path = info.path
@@ -469,9 +491,15 @@ local function processData(szType, content, add_mode, add_from)
 				end
 			end
 		end
-		if info.net == 'h2' then
-			result.h2_host = info.host
-			result.h2_path = info.path
+		if info.net == "http" then
+			if result.type == "Xray" then
+				result.xhttp_mode = "stream-one"
+				result.xhttp_host = info.host
+				result.xhttp_path = info.path
+			else
+				result.http_host = info.host
+				result.http_path = info.path
+			end
 		end
 		if info.net == 'raw' or info.net == 'tcp' then
 			if info.type and info.type ~= "http" then
@@ -651,7 +679,12 @@ local function processData(szType, content, add_mode, add_from)
 				elseif result.type == "Xray" and params.type == "tcp" then
 					params.type = "raw"
 				end
-				result.transport = params.type
+				if params.type == "h2" or params.type == "http" then
+					params.type = "http"
+					result.transport = (result.type == "Xray") and "xhttp" or "http"
+				else
+					result.transport = params.type
+				end
 				if result.type ~= "SS-Rust" and result.type ~= "SS" then
 					if params.type == 'ws' then
 						result.ws_host = params.host
@@ -672,15 +705,16 @@ local function processData(szType, content, add_mode, add_from)
 							end
 						end
 					end
-					if params.type == 'h2' or params.type == 'http' then
+					if params.type == "http" then
 						if result.type == "sing-box" then
 							result.transport = "http"
 							result.http_host = params.host
 							result.http_path = params.path
-						elseif result.type == "xray" then
-							result.transport = "h2"
-							result.h2_host = params.host
-							result.h2_path = params.path
+						elseif result.type == "Xray" then
+							result.transport = "xhttp"
+							result.xhttp_mode = "stream-one"
+							result.xhttp_host = params.host
+							result.xhttp_path = params.path
 						end
 					end
 					if params.type == 'raw' or params.type == 'tcp' then
@@ -798,7 +832,12 @@ local function processData(szType, content, add_mode, add_from)
 			elseif result.type == "Xray" and params.type == "tcp" then
 				params.type = "raw"
 			end
-			result.transport = params.type
+			if params.type == "h2" or params.type == "http" then
+				params.type = "http"
+				result.transport = (result.type == "Xray") and "xhttp" or "http"
+			else
+				result.transport = params.type
+			end
 			if params.type == 'ws' then
 				result.ws_host = params.host
 				result.ws_path = params.path
@@ -818,15 +857,16 @@ local function processData(szType, content, add_mode, add_from)
 					end
 				end
 			end
-			if params.type == 'h2' or params.type == 'http' then
+			if params.type == "http" then
 				if result.type == "sing-box" then
 					result.transport = "http"
 					result.http_host = params.host
 					result.http_path = params.path
-				elseif result.type == "xray" then
-					result.transport = "h2"
-					result.h2_host = params.host
-					result.h2_path = params.path
+				elseif result.type == "Xray" then
+					result.transport = "xhttp"
+					result.xhttp_mode = "stream-one"
+					result.xhttp_host = params.host
+					result.xhttp_path = params.path
 				end
 			end
 			if params.type == 'raw' or params.type == 'tcp' then
@@ -938,7 +978,12 @@ local function processData(szType, content, add_mode, add_from)
 			elseif result.type == "Xray" and params.type == "tcp" then
 				params.type = "raw"
 			end
-			result.transport = params.type
+			if params.type == "h2" or params.type == "http" then
+				params.type = "http"
+				result.transport = (result.type == "Xray") and "xhttp" or "http"
+			else
+				result.transport = params.type
+			end
 			if params.type == 'ws' then
 				result.ws_host = params.host
 				result.ws_path = params.path
@@ -958,15 +1003,16 @@ local function processData(szType, content, add_mode, add_from)
 					end
 				end
 			end
-			if params.type == 'h2' or params.type == 'http' then
+			if params.type == "http" then
 				if result.type == "sing-box" then
 					result.transport = "http"
 					result.http_host = params.host
 					result.http_path = params.path
-				elseif result.type == "xray" then
-					result.transport = "h2"
-					result.h2_host = params.host
-					result.h2_path = params.path
+				elseif result.type == "Xray" then
+					result.transport = "xhttp"
+					result.xhttp_mode = "stream-one"
+					result.xhttp_host = params.host
+					result.xhttp_path = params.path
 				end
 			end
 			if params.type == 'raw' or params.type == 'tcp' then
@@ -1246,10 +1292,10 @@ local function truncate_nodes(add_from)
 			if config.currentNode and config.currentNode.add_mode == "2" then
 				if add_from then
 					if config.currentNode.add_from and config.currentNode.add_from == add_from then
-						config.set(config, "nil")
+						config.set(config, "")
 					end
 				else
-					config.set(config, "nil")
+					config.set(config, "")
 				end
 				if config.id then
 					uci:delete(appname, config.id)
@@ -1383,7 +1429,7 @@ local function select_node(nodes, config)
 			config.set(config, server)
 		end
 	else
-		config.set(config, "nil")
+		config.set(config, "")
 	end
 end
 

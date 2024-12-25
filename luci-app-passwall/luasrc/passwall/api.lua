@@ -16,8 +16,10 @@ OPENWRT_ARCH = nil
 DISTRIB_ARCH = nil
 OPENWRT_BOARD = nil
 
-LOG_FILE = "/tmp/log/" .. appname .. ".log"
 CACHE_PATH = "/tmp/etc/" .. appname .. "_tmp"
+LOG_FILE = "/tmp/log/" .. appname .. ".log"
+TMP_PATH = "/tmp/etc/" .. appname
+TMP_IFACE_PATH = TMP_PATH .. "/iface"
 
 function log(...)
 	local result = os.date("%Y-%m-%d %H:%M:%S: ") .. table.concat({...}, " ")
@@ -26,6 +28,16 @@ function log(...)
 		f:write(result .. "\n")
 		f:close()
 	end
+end
+
+function set_cache_var(key, val)
+	sys.call(string.format('/usr/share/passwall/app.sh set_cache_var %s "%s"', key, val))
+end
+
+function get_cache_var(key)
+	local val = sys.exec(string.format('echo -n $(/usr/share/passwall/app.sh get_cache_var %s)', key))
+	if val == "" then val = nil end
+	return val
 end
 
 function exec_call(cmd)
@@ -97,8 +109,8 @@ end
 
 function curl_proxy(url, file, args)
 	--使用代理
-	local socks_server = luci.sys.exec("[ -f /tmp/etc/passwall/acl/default/TCP_SOCKS_server ] && echo -n $(cat /tmp/etc/passwall/acl/default/TCP_SOCKS_server) || echo -n ''")
-	if socks_server ~= "" then
+	local socks_server = get_cache_var("GLOBAL_TCP_SOCKS_server")
+	if socks_server and socks_server ~= "" then
 		if not args then args = {} end
 		local tmp_args = clone(args)
 		tmp_args[#tmp_args + 1] = "-x socks5h://" .. socks_server
@@ -117,11 +129,13 @@ end
 
 function curl_direct(url, file, args)
 	--直连访问
+	local chn_list = uci:get(appname, "@global[0]", "chn_list") or "direct"
+	local Dns = (chn_list == "proxy") and "1.1.1.1" or "223.5.5.5"
 	if not args then args = {} end
 	local tmp_args = clone(args)
 	local domain, port = get_domain_port_from_url(url)
 	if domain then
-		local ip = domainToIPv4(domain)
+		local ip = domainToIPv4(domain, Dns)
 		if ip then
 			tmp_args[#tmp_args + 1] = "--resolve " .. domain .. ":" .. port .. ":" .. ip
 		end
@@ -207,7 +221,14 @@ end
 
 function is_install(package)
 	if package and #package > 0 then
-		return sys.call(string.format('opkg list-installed | grep "%s" > /dev/null 2>&1', package)) == 0
+		local file_path = "/usr/lib/opkg/info"
+		local file_ext = ".control"
+		local has = sys.call("[ -d " .. file_path .. " ]")
+		if has ~= 0 then
+			file_path = "/lib/apk/packages"
+			file_ext = ".list"
+		end
+		return sys.call(string.format('[ -s "%s/%s%s" ]', file_path, package, file_ext)) == 0
 	end
 	return false
 end
@@ -350,6 +371,26 @@ function get_domain_from_url(url)
 		return domain
 	end
 	return url
+end
+
+function get_node_name(node_id)
+	local e
+	if type(node_id) == "table" then
+		e = node_id
+	else
+		e = uci:get_all(appname, node_id)
+	end
+	if e then
+		if e.type and e.remarks then
+			if e.protocol and (e.protocol == "_balancing" or e.protocol == "_shunt" or e.protocol == "_iface") then
+				local type = e.type
+				if type == "sing-box" then type = "Sing-Box" end
+				local remark = "%s：[%s] " % {type .. " " .. i18n.translatef(e.protocol), e.remarks}
+				return remark
+			end
+		end
+	end
+	return ""
 end
 
 function get_valid_nodes()
@@ -774,7 +815,7 @@ local default_file_tree = {
 
 local function get_api_json(url)
 	local jsonc = require "luci.jsonc"
-	local return_code, content = curl_logic(url, nil, curl_args)
+	local return_code, content = curl_auto(url, nil, curl_args)
 	if return_code ~= 0 or content == "" then return {} end
 	return jsonc.parse(content) or {}
 end
@@ -891,7 +932,7 @@ function to_download(app_name, url, size)
 	local _curl_args = clone(curl_args)
 	table.insert(_curl_args, "-m 60")
 
-	local return_code, result = curl_logic(url, tmp_file, _curl_args)
+	local return_code, result = curl_auto(url, tmp_file, _curl_args)
 	result = return_code == 0
 
 	if not result then
@@ -1034,7 +1075,7 @@ end
 function get_version()
 	local version = sys.exec("opkg list-installed luci-app-passwall 2>/dev/null | awk '{print $3}'")
 	if not version or #version == 0 then
-		version = sys.exec("apk info luci-app-passwall 2>/dev/null | awk 'NR == 1 {print $1}' | cut -d'-' -f4-")
+		version = sys.exec("apk info -L luci-app-passwall 2>/dev/null | awk 'NR == 1 {print $1}' | cut -d'-' -f4-")
 	end
 	return version or ""
 end
@@ -1042,7 +1083,7 @@ end
 function to_check_self()
 	local url = "https://raw.githubusercontent.com/xiaorouji/openwrt-passwall/main/luci-app-passwall/Makefile"
 	local tmp_file = "/tmp/passwall_makefile"
-	local return_code, result = curl_logic(url, tmp_file, curl_args)
+	local return_code, result = curl_auto(url, tmp_file, curl_args)
 	result = return_code == 0
 	if not result then
 		exec("/bin/rm", {"-f", tmp_file})
