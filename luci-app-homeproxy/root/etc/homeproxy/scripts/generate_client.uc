@@ -2,7 +2,7 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-only
  *
- * Copyright (C) 2023 ImmortalWrt.org
+ * Copyright (C) 2023-2024 ImmortalWrt.org
  */
 
 'use strict';
@@ -19,6 +19,8 @@ import {
 } from 'homeproxy';
 
 const ubus = connect();
+
+const features = ubus.call('luci.homeproxy', 'singbox_get_features') || {};
 
 /* UCI config start */
 const uci = cursor();
@@ -205,9 +207,7 @@ function generate_outbound(node) {
 		authenticated_length: node.vmess_authenticated_length ? (node.vmess_authenticated_length === '1') : null,
 		packet_encoding: node.packet_encoding,
 		/* WireGuard */
-		system_interface: (node.type === 'wireguard') || null,
 		gso: (node.wireguard_gso === '1') || null,
-		interface_name: (node.type === 'wireguard') ? 'wg-' + node['.name'] + '-out' : null,
 		local_address: node.wireguard_local_address,
 		private_key: node.wireguard_private_key,
 		peer_public_key: node.wireguard_peer_public_key,
@@ -241,7 +241,8 @@ function generate_outbound(node) {
 				enabled: true,
 				dynamic_record_sizing_disabled: (node.tls_ech_tls_disable_drs === '1'),
 				pq_signature_schemes_enabled: (node.tls_ech_enable_pqss === '1'),
-				config: node.tls_ech_config
+				config: node.tls_ech_config,
+				config_path: node.tls_ech_config_path
 			} : null,
 			utls: !isEmpty(node.tls_utls) ? {
 				enabled: true,
@@ -454,9 +455,11 @@ if (!isEmpty(main_node)) {
 			source_port_range: cfg.source_port_range,
 			process_name: cfg.process_name,
 			process_path: cfg.process_path,
+			process_path_regex: cfg.process_path_regex,
 			user: cfg.user,
 			rule_set: get_ruleset(cfg.rule_set),
-			rule_set_ipcidr_match_source: (cfg.rule_set_ipcidr_match_source === '1') || null,
+			/* rule_set_ipcidr_match_source is deprecated in sing-box 1.10.0 */
+			rule_set_ip_cidr_match_source: (cfg.rule_set_ip_cidr_match_source  === '1') || null,
 			invert: (cfg.invert === '1') || null,
 			outbound: get_outbound(cfg.outbound),
 			server: get_resolver(cfg.server),
@@ -525,8 +528,8 @@ if (match(proxy_mode, /tun/))
 		tag: 'tun-in',
 
 		interface_name: tun_name,
-		inet4_address: tun_addr4,
-		inet6_address: (ipv6_support === '1') ? tun_addr6 : null,
+		/* inet4_address and inet6_address are deprecated in sing-box 1.10.0 */
+		address: (ipv6_support === '1') ? [tun_addr4, tun_addr6] : [tun_addr4],
 		mtu: strToInt(tun_mtu),
 		gso: (tun_gso === '1'),
 		auto_route: false,
@@ -588,10 +591,6 @@ config.route = {
 		{
 			inbound: 'dns-in',
 			outbound: 'dns-out'
-		},
-		{
-			protocol: 'dns',
-			outbound: 'dns-out'
 		}
 	],
 	rule_set: [],
@@ -639,9 +638,12 @@ if (!isEmpty(main_node)) {
 			port_range: cfg.port_range,
 			process_name: cfg.process_name,
 			process_path: cfg.process_path,
+			process_path_regex: cfg.process_path_regex,
 			user: cfg.user,
 			rule_set: get_ruleset(cfg.rule_set),
-			rule_set_ipcidr_match_source: (cfg.rule_set_ipcidr_match_source === '1') || null,
+			/* rule_set_ipcidr_match_source is deprecated in sing-box 1.10.0 */
+			rule_set_ip_cidr_match_source: (cfg.rule_set_ip_cidr_match_source  === '1') || null,
+			rule_set_ip_cidr_accept_empty: (cfg.rule_set_ip_cidr_accept_empty === '1') || null,
 			invert: (cfg.invert === '1') || null,
 			outbound: get_outbound(cfg.outbound)
 		});
