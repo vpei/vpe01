@@ -17,11 +17,11 @@
 # svn update
 # cd ../
 
-sed -i 's/24.12.28/25.1.1/g' feeds/packages/net/xray-core/Makefile
-sed -i 's/9e7e14ac1da5aac22382b485bb2af3bbef07dc5e3b583e464c479f8f0f06b2d5/619b10d24bab367a0788b3585f8d31fa4e5e060be7f72647d6ee17bd744603a5/g' feeds/packages/net/xray-core/Makefile
+sed -i 's/24.12.31/25.1.30/g' feeds/packages/net/xray-core/Makefile
+sed -i 's/e3c24b561ab422785ee8b7d4a15e44db159d9aa249eb29a36ad1519c15267be0/983ee395f085ed1b7fbe0152cb56a5b605a6f70a5645d427c7186c476f14894e/g' feeds/packages/net/xray-core/Makefile
 
-sed -i 's/1.10.5/1.10.6/g' feeds/packages/net/sing-box/Makefile
-sed -i 's/ca0385b45d160c2c2a1d0e09665f4f04caac27cb3dd9d6132173316dfd873b75/bb3ca59c848f1509d0e183c54c91716993ce77ab0c9c48a0de0bcd4cc1f0e021/g' feeds/packages/net/sing-box/Makefile
+sed -i 's/1.10.7/1.11.0/g' feeds/packages/net/sing-box/Makefile
+sed -i 's/402b618148b58f5ff6c1bee4f4fdcf7cdcb88a2df6a8bd682ea742a89b5be9ec/d4a48b2fe450041fea2d25955ddc092a62afc8da7bb442b49cb12575123b2edb/g' feeds/packages/net/sing-box/Makefile
 
 git pull && git add -A && git commit -am "Initial commit" && git push
 
