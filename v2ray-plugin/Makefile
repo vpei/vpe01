@@ -5,6 +5,9 @@
 
 include $(TOPDIR)/rules.mk
 
+export GO111MODULE=on
+export GOPROXY=https://goproxy.cn
+
 PKG_NAME:=v2ray-plugin
 PKG_VERSION:=5.25.0
 PKG_RELEASE:=1
