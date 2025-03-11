@@ -4,6 +4,9 @@
 
 include $(TOPDIR)/rules.mk
 
+export GO111MODULE=on
+export GOPROXY=https://goproxy.cn
+
 PKG_NAME:=xray-plugin
 PKG_VERSION:=1.8.24
 PKG_RELEASE:=1
