@@ -1,5 +1,9 @@
 # git pull && sh sh.sh
 
+export GO111MODULE=on
+export GOPROXY=https://goproxy.cn
+export GOPROXY=https://goproxy.io
+
 #删除docker无脑初始化教程
 # sed -i '31,39d' package/lean/luci-app-docker/po/zh-cn/docker.po
 # rm -rf lean/luci-app-docker/root/www

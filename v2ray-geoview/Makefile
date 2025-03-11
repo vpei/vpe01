@@ -1,5 +1,8 @@
 include $(TOPDIR)/rules.mk
 
+export GO111MODULE=on
+export GOPROXY=https://goproxy.cn
+
 PKG_NAME:=geoview
 PKG_VERSION:=0.1.0
 PKG_RELEASE:=1
