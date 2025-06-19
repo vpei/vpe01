@@ -19,10 +19,10 @@ PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
 
 # include ../pypi.mk
-include $(TOPDIR)/feeds/packages/lang/python3/pypi.mk
+include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 # include ../python3-package.mk
-include $(TOPDIR)/feeds/packages/lang/python3/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-netifaces
   SECTION:=lang
