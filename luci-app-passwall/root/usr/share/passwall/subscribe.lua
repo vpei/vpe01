@@ -280,7 +280,7 @@ do
 			if node.balancing_node then
 				for k, node in pairs(node.balancing_node) do
 					currentNodes[#currentNodes + 1] = {
-						log = false,
+						log = true,
 						node = node,
 						currentNode = node and uci:get_all(appname, node) or nil,
 						remarks = node,
@@ -328,7 +328,7 @@ do
 			if node.urltest_node then
 				for k, node in pairs(node.urltest_node) do
 					currentNodes[#currentNodes + 1] = {
-						log = false,
+						log = true,
 						node = node,
 						currentNode = node and uci:get_all(appname, node) or nil,
 						remarks = node,
@@ -1036,8 +1036,8 @@ local function processData(szType, content, add_mode, add_from)
 			end
 
 			result.encryption = params.encryption or "none"
-
-			result.flow = params.flow or nil
+			result.flow = params.flow and params.flow:gsub("-udp443", "") or nil
+			result.alpn = params.alpn
 
 			if result.type == "sing-box" and (result.transport == "mkcp" or result.transport == "xhttp" or result.transport == "splithttp") then
 				log("跳过节点:" .. result.remarks .."，因Sing-Box不支持" .. szType .. "协议的" .. result.transport .. "传输方式，需更换Xray。")
@@ -1191,7 +1191,7 @@ local function processData(szType, content, add_mode, add_from)
 			
 			result.encryption = params.encryption or "none"
 
-			result.flow = params.flow or nil
+			result.flow = params.flow and params.flow:gsub("-udp443", "") or nil
 
 			result.tls = "0"
 			if params.security == "tls" or params.security == "reality" then
@@ -1269,7 +1269,6 @@ local function processData(szType, content, add_mode, add_from)
 		else
 			result.address = host_port
 		end
-		result.protocol = params.protocol
 		result.hysteria_obfs = params.obfsParam
 		result.hysteria_auth_type = "string"
 		result.hysteria_auth_password = params.auth
@@ -1452,9 +1451,12 @@ local function processData(szType, content, add_mode, add_from)
 				result.address = host_port
 			end
 			result.tls = "0"
+			if (not params.security or params.security == "") and params.sni and params.sni ~= "" then
+				params.security = "tls"
+			end
 			if params.security == "tls" or params.security == "reality" then
 				result.tls = "1"
-				result.tls_serverName = (params.sni and params.sni ~= "") and params.sni or params.host
+				result.tls_serverName = params.sni
 				result.alpn = params.alpn
 				if params.fp and params.fp ~= "" then
 					result.utls = "1"
@@ -1566,7 +1568,9 @@ local function select_node(nodes, config, parentConfig)
 		if config.currentNode[".name"] then
 			for index, node in pairs(nodes) do
 				if node[".name"] == config.currentNode[".name"] then
-					log('更新【' .. config.remarks .. '】匹配节点：' .. node.remarks)
+					if config.log == nil or config.log == true then
+						log('更新【' .. config.remarks .. '】匹配节点：' .. node.remarks)
+					end
 					server = node[".name"]
 					break
 				end
@@ -1734,6 +1738,9 @@ local function update_node(manual)
 
 		for _, config in pairs(CONFIG) do
 			if config.currentNodes and #config.currentNodes > 0 then
+				if config.remarks and config.currentNodes[1].log ~= false then
+					log('----【' .. config.remarks .. '】----')
+				end
 				for kk, vv in pairs(config.currentNodes) do
 					select_node(nodes, vv, config)
 				end
