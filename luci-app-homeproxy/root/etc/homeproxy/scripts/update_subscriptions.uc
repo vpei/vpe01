@@ -7,6 +7,7 @@
 
 'use strict';
 
+import { md5 } from 'digest';
 import { open } from 'fs';
 import { connect } from 'ubus';
 import { cursor } from 'uci';
@@ -15,9 +16,8 @@ import { urldecode, urlencode } from 'luci.http';
 import { init_action } from 'luci.sys';
 
 import {
-	calcStringMD5, wGET, decodeBase64Str,
-	getTime, isEmpty, parseURL, validation,
-	HP_DIR, RUN_DIR
+	wGET, decodeBase64Str, getTime, isEmpty, parseURL,
+	validation, HP_DIR, RUN_DIR
 } from 'homeproxy';
 
 /* UCI config start */
@@ -101,6 +101,23 @@ function parse_uri(uri) {
 		uri = split(trim(uri), '://');
 
 		switch (uri[0]) {
+		case 'anytls':
+			/* https://github.com/anytls/anytls-go/blob/v0.0.8/docs/uri_scheme.md */
+			url = parseURL('http://' + uri[1]) || {};
+			params = url.searchParams || {};
+
+			config = {
+				label: url.hash ? urldecode(url.hash) : null,
+				type: 'anytls',
+				address: url.hostname,
+				port: url.port,
+				password: urldecode(url.username),
+				tls: '1',
+				tls_sni: params.sni,
+				tls_insecure: (params.insecure === '1') ? '1' : '0'
+			};
+
+			break;
 		case 'http':
 		case 'https':
 			url = parseURL('http://' + uri[1]) || {};
@@ -170,7 +187,7 @@ function parse_uri(uri) {
 				hysteria_obfs_type: params.obfs,
 				hysteria_obfs_password: params['obfs-password'],
 				tls: '1',
-				tls_insecure: params.insecure ? '1' : '0',
+				tls_insecure: (params.insecure === '1') ? '1' : '0',
 				tls_sni: params.sni
 			};
 
@@ -216,16 +233,16 @@ function parse_uri(uri) {
 				ss_userinfo = [url.username, urldecode(url.password)];
 			else if (url.username)
 				/* User info encoded with base64 */
-				ss_userinfo = split(decodeBase64Str(urldecode(url.username)), ':');
+				ss_userinfo = split(decodeBase64Str(urldecode(url.username)), ':', 2);
 
 			let ss_plugin, ss_plugin_opts;
 			if (url.search && url.searchParams.plugin) {
-				const ss_plugin_info = split(url.searchParams.plugin, ';');
+				const ss_plugin_info = split(url.searchParams.plugin, ';', 2);
 				ss_plugin = ss_plugin_info[0];
 				if (ss_plugin === 'simple-obfs')
 					/* Fix non-standard plugin name */
 					ss_plugin = 'obfs-local';
-				ss_plugin_opts = slice(ss_plugin_info, 1) ? join(';', slice(ss_plugin_info, 1)) : null;
+				ss_plugin_opts = ss_plugin_info[1];
 			}
 
 			config = {
@@ -342,6 +359,10 @@ function parse_uri(uri) {
 					config.http_path = params.path ? urldecode(params.path) : null;
 				}
 				break;
+			case 'httpupgrade':
+				config.httpupgrade_host = params.host ? urldecode(params.host) : null;
+				config.http_path = params.path ? urldecode(params.path) : null;
+				break;
 			case 'ws':
 				config.ws_host = params.host ? urldecode(params.host) : null;
 				config.ws_path = params.path ? urldecode(params.path) : null;
@@ -361,7 +382,7 @@ function parse_uri(uri) {
 				return null;
 			}
 
-			/* https://github.com/2dust/v2rayN/wiki/%E5%88%86%E4%BA%AB%E9%93%BE%E6%8E%A5%E6%A0%BC%E5%BC%8F%E8%AF%B4%E6%98%8E(ver-2) */
+			/* https://github.com/2dust/v2rayN/wiki/Description-of-VMess-share-link */
 			try {
 				uri = json(decodeBase64Str(uri[1])) || {};
 			} catch(e) {
@@ -403,7 +424,8 @@ function parse_uri(uri) {
 				transport: (uri.net !== 'tcp') ? uri.net : null,
 				tls: (uri.tls === 'tls') ? '1' : '0',
 				tls_sni: uri.sni || uri.host,
-				tls_alpn: uri.alpn ? split(uri.alpn, ',') : null
+				tls_alpn: uri.alpn ? split(uri.alpn, ',') : null,
+				tls_utls: sing_features.with_utls ? uri.fp : null
 			};
 			switch (uri.net) {
 			case 'grpc':
@@ -413,9 +435,13 @@ function parse_uri(uri) {
 			case 'tcp':
 				if (uri.net === 'h2' || uri.type === 'http') {
 					config.transport = 'http';
-					config.http_host = uri.host ? uri.host.split(',') : null;
+					config.http_host = uri.host ? split(uri.host, ',') : null;
 					config.http_path = uri.path;
 				}
+				break;
+			case 'httpupgrade':
+				config.httpupgrade_host = uri.host;
+				config.http_path = uri.path;
 				break;
 			case 'ws':
 				config.ws_host = uri.host;
@@ -455,7 +481,7 @@ function main() {
 
 	for (let url in subscription_urls) {
 		url = replace(url, /#.*$/, '');
-		const groupHash = calcStringMD5(url);
+		const groupHash = md5(url);
 		node_cache[groupHash] = {};
 
 		const res = wGET(url, user_agent);
@@ -473,7 +499,7 @@ function main() {
 				map(nodes, (_, i) => nodes[i].nodetype = 'sip008');
 		} catch(e) {
 			nodes = decodeBase64Str(res);
-			nodes = nodes ? split(trim(replace(nodes, / /g, '_')), '\n') : {};
+			nodes = nodes ? split(trim(replace(nodes, / /g, '_')), '\n') : [];
 		}
 
 		let count = 0;
@@ -486,8 +512,8 @@ function main() {
 
 			const label = config.label;
 			config.label = null;
-			const confHash = calcStringMD5(sprintf('%J', config)),
-			      nameHash = calcStringMD5(label);
+			const confHash = md5(sprintf('%J', config)),
+			      nameHash = md5(label);
 			config.label = label;
 
 			if (filter_check(config.label))
@@ -543,7 +569,7 @@ function main() {
 
 			log(sprintf('Removing node: %s.', cfg.label || cfg['name']));
 		} else {
-			map(keys(node_cache[cfg.grouphash][cfg['.name']]), (v) => {
+			map(keys(cfg), (v) => {
 				if (v in node_cache[cfg.grouphash][cfg['.name']])
 					uci.set(uciconfig, cfg['.name'], v, node_cache[cfg.grouphash][cfg['.name']][v]);
 				else
@@ -557,7 +583,7 @@ function main() {
 			if (node.isExisting)
 				return null;
 
-			const nameHash = calcStringMD5(node.label);
+			const nameHash = md5(node.label);
 			uci.set(uciconfig, nameHash, 'node');
 			map(keys(node), (v) => uci.set(uciconfig, nameHash, v, node[v]));
 
