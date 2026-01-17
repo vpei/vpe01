@@ -108,10 +108,10 @@ function sh_uci_commit(config)
 end
 
 function set_cache_var(key, val)
-	sys.call(string.format('/usr/share/passwall2/app.sh set_cache_var %s "%s"', key, val))
+	sys.call(string.format('. /usr/share/passwall2/utils.sh ; set_cache_var %s "%s"', key, val))
 end
 function get_cache_var(key)
-	local val = sys.exec(string.format('echo -n $(/usr/share/passwall2/app.sh get_cache_var %s)', key))
+	local val = sys.exec(string.format('. /usr/share/passwall2/utils.sh ; echo -n $(get_cache_var %s)', key))
 	if val == "" then val = nil end
 	return val
 end
@@ -243,9 +243,9 @@ function url(...)
 end
 
 function trim(s)
-	local len = #s
-	local i, j = 1, len
-	while i <= len and s:byte(i) <= 32 do i = i + 1 end
+	if type(s) ~= "string" then return "" end
+	local i, j = 1, #s
+	while i <= j and s:byte(i) <= 32 do i = i + 1 end
 	while j >= i and s:byte(j) <= 32 do j = j - 1 end
 	if i > j then return "" end
 	return s:sub(i, j)
@@ -1178,11 +1178,11 @@ function get_version()
 	if not version or #version == 0 then
 		version = sys.exec("apk list luci-app-passwall2 2>/dev/null | awk '/installed/ {print $1}' | cut -d'-' -f4-")
 	end
-	return (version or ""):gsub("\n", "")
+	return (version or ""):gsub("\n", ""):match("^([^-]+)")
 end
 
 function to_check_self()
-	local url = "https://raw.githubusercontent.com/xiaorouji/openwrt-passwall2/main/luci-app-passwall2/Makefile"
+	local url = "https://raw.githubusercontent.com/Openwrt-Passwall/openwrt-passwall2/main/luci-app-passwall2/Makefile"
 	local tmp_file = "/tmp/passwall2_makefile"
 	local return_code, result = curl_auto(url, tmp_file, curl_args)
 	result = return_code == 0
@@ -1277,14 +1277,15 @@ function set_apply_on_parse(map)
 				end
 			end
 		else
+			apply_redirect(map)
+			local old = map.on_after_save
 			map.on_after_save = function(self)
+				if old then old(self) end
 				map:set("@global[0]", "timestamp", os.time())
 			end
+			local cbi = require "luci.cbi"
+			map:append(cbi.Template(appname .. "/cbi/optimize_cbi_ui"))
 		end
-	end
-	map.render = function(self, ...)
-		getmetatable(self).__index.render(self, ...) -- Maintain the original rendering process
-		optimize_cbi_ui()
 	end
 end
 
@@ -1390,26 +1391,29 @@ function format_go_time(input)
 	return result
 end
 
-function optimize_cbi_ui()
-	luci.http.write([[
-		<script type="text/javascript">
-			//Correct the names of the move up and move down buttons.
-			document.querySelectorAll("input.btn.cbi-button.cbi-button-up").forEach(function(btn) {
-				btn.value = "]] .. i18n.translate("Move up") .. [[";
-			});
-			document.querySelectorAll("input.btn.cbi-button.cbi-button-down").forEach(function(btn) {
-				btn.value = "]] .. i18n.translate("Move down") .. [[";
-			});
-			//Remove extra line breaks between controls and descriptions.
-			document.querySelectorAll("div.cbi-value-description").forEach(function(descDiv) {
-				var prev = descDiv.previousSibling;
-				while (prev && prev.nodeType === Node.TEXT_NODE && prev.textContent.trim() === "") {
-					prev = prev.previousSibling;
-				}
-				if (prev && prev.nodeType === Node.ELEMENT_NODE && prev.tagName === "BR") {
-					prev.remove();
-				}
-			});
-		</script>
-	]])
+function apply_redirect(m)
+	local tmp_uci_file = "/etc/config/" .. appname .. "_redirect"
+	if m.redirect and m.redirect ~= "" then
+		if fs.access(tmp_uci_file) then
+			local redirect
+			for line in io.lines(tmp_uci_file) do
+				redirect = line:match("option%s+url%s+['\"]([^'\"]+)['\"]")
+				if redirect and redirect ~= "" then break end
+			end
+			if redirect and redirect ~= "" then
+				sys.call("/bin/rm -f " .. tmp_uci_file)
+				luci.http.redirect(redirect)
+			end
+		else
+			fs.writefile(tmp_uci_file, "config redirect\n")
+		end
+		m.on_after_save = function(self)
+			local redirect = self.redirect
+			if redirect and redirect ~= "" then
+				uci:set(appname .. "_redirect", "@redirect[0]", "url", redirect)
+			end
+		end
+	else
+		sys.call("/bin/rm -f " .. tmp_uci_file)
+	end
 end

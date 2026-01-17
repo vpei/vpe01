@@ -19,6 +19,9 @@ msgstr "连接失败"
 msgid "Touch Check"
 msgstr "点我检测"
 
+msgid "TLS handshake test, latency for reference only"
+msgstr "TLS握手测试，延时仅供参考"
+
 msgid "Kernel Unsupported"
 msgstr "内核不支持"
 
@@ -352,6 +355,9 @@ msgstr "客户端代理"
 msgid "When selected, devices in LAN can transparent proxy. Otherwise, it will not be proxy. But you can still use access control to allow the designated device to proxy."
 msgstr "当勾选时，局域网内的设备可以透明代理。否则，将不代理。但您仍然可以使用访问控制允许指定的设备代理。"
 
+msgid "Missing components, transparent proxy is unavailable."
+msgstr "缺少组件，透明代理不可用。"
+
 msgid "Want different devices to use different proxy modes/ports/nodes? Please use access control."
 msgstr "希望不同设备使用不同的代理模式/端口/节点？请使用访问控制。"
 
@@ -670,6 +676,9 @@ msgstr "自动检测延迟"
 msgid "Show server address and port"
 msgstr "显示服务器地址和端口"
 
+msgid "URL Test Address"
+msgstr "URL 测试地址"
+
 msgid "URL Test"
 msgstr "URL 测试"
 
@@ -771,6 +780,9 @@ msgstr "常用的"
 
 msgid "Only Web"
 msgstr "仅网页"
+
+msgid "default"
+msgstr "默认"
 
 msgid "Default"
 msgstr "默认"
@@ -885,6 +897,9 @@ msgstr "节点"
 
 msgid "Node Address"
 msgstr "节点地址"
+
+msgid "Node address cannot be empty."
+msgstr "节点地址不能为空。"
 
 msgid "Node Port"
 msgstr "节点端口"
@@ -1002,6 +1017,9 @@ msgstr "从 Geo 文件生成规则"
 
 msgid "Generate rule lists such as GFW, China domains, and China IP ranges based on Geo files."
 msgstr "根据 Geo 文件生成规则列表，包括 GFW、中国域名和中国 IP 段等。"
+
+msgid "When manually updating with this option enabled, rules will be regenerated from existing Geo files even if no new version is available."
+msgstr "启用此选项后手动更新时,即使没有新版本也会从现有 Geo 文件重新生成规则。"
 
 msgid "Enable Geo Data Parsing"
 msgstr "开启 Geo 数据解析"
@@ -1291,6 +1309,12 @@ msgstr "本地端口"
 msgid "Fast Open"
 msgstr "快速打开"
 
+msgid "Pre-connections"
+msgstr "预连接"
+
+msgid "Number of early established connections to reduce latency."
+msgstr "预连接的数量，用于降低延迟。"
+
 msgid "Need node support required"
 msgstr "需要节点支持"
 
@@ -1459,8 +1483,8 @@ msgstr "节点数量"
 msgid "You can only set up a maximum of %s nodes for the time being, Used for access control."
 msgstr "目前最多只能设置 %s 个节点，用于给访问控制使用。"
 
-msgid "Firewall tools"
-msgstr "防火墙工具"
+msgid "Prefer firewall tools"
+msgstr "首选防火墙工具"
 
 msgid "IPv6 TProxy"
 msgstr "IPv6 透明代理(TProxy)"
@@ -1896,9 +1920,6 @@ msgstr "是否要恢复客户端默认配置？"
 
 msgid "Are you sure you want to restore the client to default settings?"
 msgstr "是否真的要恢复客户端默认配置？"
-
-msgid "Settings have been successfully saved and applied!"
-msgstr "设置已成功保存并应用!"
 
 msgid "_urltest"
 msgstr "URLTest"

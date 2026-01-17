@@ -8,13 +8,13 @@ local fs = api.fs
 local CACHE_PATH = api.CACHE_PATH
 
 local new_port
-
 local function get_new_port()
-	if new_port then
-		new_port = tonumber(sys.exec(string.format("echo -n $(/usr/share/%s/app.sh get_new_port %s tcp)", appname, new_port + 1)))
-	else
-		new_port = tonumber(sys.exec(string.format("echo -n $(/usr/share/%s/app.sh get_new_port auto tcp)", appname)))
+	local cmd_format = ". /usr/share/passwall2/utils.sh ; echo -n $(get_new_port %s tcp)"
+	local set_port = 0
+	if new_port and tonumber(new_port) then
+		set_port = tonumber(new_port) + 1
 	end
+	new_port = tonumber(sys.exec(string.format(cmd_format, set_port == 0 and "auto" or set_port)))
 	return new_port
 end
 
@@ -127,6 +127,12 @@ function gen_outbound(flag, node, tag, proxy_table)
 			node.wireguard_reserved = #bytes > 0 and bytes or nil
 		end
 
+		if node.protocol == "hysteria2" then
+			node.protocol = "hysteria"
+			node.transport = "hysteria"
+			node.stream_security = "tls"
+		end
+
 		result = {
 			_id = node_id,
 			_flag = flag,
@@ -139,7 +145,7 @@ function gen_outbound(flag, node, tag, proxy_table)
 				concurrency = (node.mux == "1" and ((node.mux_concurrency) and tonumber(node.mux_concurrency) or -1)) or nil,
 				xudpConcurrency = (node.mux == "1" and ((node.xudp_concurrency) and tonumber(node.xudp_concurrency) or 8)) or nil
 			} or nil,
-			streamSettings = (node.streamSettings or node.protocol == "vmess" or node.protocol == "vless" or node.protocol == "socks" or node.protocol == "shadowsocks" or node.protocol == "trojan") and {
+			streamSettings = (node.streamSettings or node.protocol == "vmess" or node.protocol == "vless" or node.protocol == "socks" or node.protocol == "shadowsocks" or node.protocol == "trojan" or node.protocol == "hysteria") and {
 				sockopt = {
 					mark = 255,
 					tcpFastOpen = (node.tcp_fast_open == "1") and true or nil,
@@ -175,9 +181,9 @@ function gen_outbound(flag, node, tag, proxy_table)
 									end
 									return r
 								end)() or {"/"},
-							headers = (node.tcp_guise_http_host or node.tcp_guise_http_user_agent) and {
+							headers = (node.tcp_guise_http_host or node.user_agent) and {
 								Host = node.tcp_guise_http_host,
-								["User-Agent"] = node.tcp_guise_http_user_agent and {node.tcp_guise_http_user_agent} or nil
+								["User-Agent"] = node.user_agent and {node.user_agent} or nil
 							} or nil
 						} or nil
 					}
@@ -199,8 +205,8 @@ function gen_outbound(flag, node, tag, proxy_table)
 				wsSettings = (node.transport == "ws") and {
 					path = node.ws_path or "/",
 					host = node.ws_host,
-					headers = node.ws_user_agent and {
-						["User-Agent"] = node.ws_user_agent
+					headers = node.user_agent and {
+						["User-Agent"] = node.user_agent
 					} or nil,
 					maxEarlyData = tonumber(node.ws_maxEarlyData) or nil,
 					earlyDataHeaderName = (node.ws_earlyDataHeaderName) and node.ws_earlyDataHeaderName or nil,
@@ -217,24 +223,72 @@ function gen_outbound(flag, node, tag, proxy_table)
 				httpupgradeSettings = (node.transport == "httpupgrade") and {
 					path = node.httpupgrade_path or "/",
 					host = node.httpupgrade_host,
-					headers =  node.httpupgrade_user_agent and {
-						["User-Agent"] = node.httpupgrade_user_agent
+					headers =  node.user_agent and {
+						["User-Agent"] = node.user_agent
 					} or nil
 				} or nil,
 				xhttpSettings = (node.transport == "xhttp") and {
 					mode = node.xhttp_mode or "auto",
 					path = node.xhttp_path or "/",
 					host = node.xhttp_host,
-					-- If the code contains an "extra" section, retrieve the contents of "extra"; otherwise, assign the value directly to "extra".
-					extra = node.xhttp_extra and (function()
+					extra = (function()
+						local extra_tbl = {}
+						-- Parse xhttp_extra and perform simple fault tolerance.
+						if node.xhttp_extra then
 							local success, parsed = pcall(jsonc.parse, api.base64Decode(node.xhttp_extra))
-							if success then
-								return parsed.extra or parsed
-							else
-								return nil
+							if success and parsed then
+								extra_tbl = parsed.extra or parsed
+								for k, v in pairs(extra_tbl) do
+									if (type(v) == "table" and next(v) == nil) or v == nil then
+										extra_tbl[k] = nil
+									end
+								end
 							end
-						end)() or nil
+						end
+						-- Handling User-Agent
+						if node.user_agent and node.user_agent ~= "" then
+							extra_tbl.headers = extra_tbl.headers or {}
+							if not extra_tbl.headers["User-Agent"] and not extra_tbl.headers["user-agent"] then
+								extra_tbl.headers["User-Agent"] = node.user_agent
+							end
+						end
+						-- Clean up empty headers
+						if extra_tbl.headers and next(extra_tbl.headers) == nil then
+							extra_tbl.headers = nil
+						end
+						return next(extra_tbl) ~= nil and extra_tbl or nil
+					end)()
 				} or nil,
+				hysteriaSettings = (node.transport == "hysteria") and {
+					version = 2,
+					auth = node.hysteria2_auth_password,
+					up = (node.hysteria2_up_mbps and tonumber(node.hysteria2_up_mbps)) and tonumber(node.hysteria2_up_mbps) .. "mbps" or nil,
+					down = (node.hysteria2_down_mbps and tonumber(node.hysteria2_down_mbps)) and tonumber(node.hysteria2_down_mbps) .. "mbps" or nil,
+					udphop = (node.hysteria2_hop) and {
+						port = string.gsub(node.hysteria2_hop, ":", "-"),
+						interval = (function()
+								local v = tonumber((node.hysteria2_hop_interval or "30s"):match("^%d+"))
+								return (v and v >= 5) and (v .. "s") or "30s"
+							    end)()
+					} or nil,
+					maxIdleTimeout = (function()
+						local timeoutStr = tostring(node.hysteria2_idle_timeout or "")
+						local timeout = tonumber(timeoutStr:match("^%d+"))
+						if timeout and timeout >= 4 and timeout <= 120 then
+							return timeout
+						end
+						return 30
+					end)(),
+					disablePathMTUDiscovery = (node.hysteria2_disable_mtu_discovery) and true or false
+				} or nil,
+				udpmasks = (node.transport == "hysteria" and node.hysteria2_obfs_type and node.hysteria2_obfs_type ~= "") and {
+					{
+						type = node.hysteria2_obfs_type,
+						settings = node.hysteria2_obfs_password and {
+							password = node.hysteria2_obfs_password
+						} or nil
+					}
+				} or nil
 			} or nil,
 			settings = {
 				vnext = (node.protocol == "vmess" or node.protocol == "vless") and {
@@ -246,12 +300,11 @@ function gen_outbound(flag, node, tag, proxy_table)
 								id = node.uuid,
 								level = 0,
 								security = (node.protocol == "vmess") and node.security or nil,
+								testpre = (node.protocol == "vless") and tonumber(node.preconns) or nil,
 								encryption = (node.protocol == "vless") and ((node.encryption and node.encryption ~= "") and node.encryption or "none") or nil,
 								flow = (node.protocol == "vless"
 									and (node.tls == "1" or (node.encryption and node.encryption ~= "" and node.encryption ~= "none"))
-									and (node.transport == "raw" or node.transport == "tcp" or node.transport == "xhttp")
-									and node.flow and node.flow ~= ""
-								) and node.flow or nil
+									and node.flow and node.flow ~= "") and node.flow or nil
 							}
 						}
 					}
@@ -274,7 +327,7 @@ function gen_outbound(flag, node, tag, proxy_table)
 						} or nil
 					}
 				} or nil,
-				address = (node.protocol == "wireguard" and node.wireguard_local_address) and node.wireguard_local_address or nil,
+				address = (node.protocol == "wireguard" and node.wireguard_local_address) or (node.protocol == "hysteria" and node.address) or nil,
 				secretKey = (node.protocol == "wireguard") and node.wireguard_secret_key or nil,
 				peers = (node.protocol == "wireguard") and {
 					{
@@ -285,7 +338,9 @@ function gen_outbound(flag, node, tag, proxy_table)
 					}
 				} or nil,
 				mtu = (node.protocol == "wireguard" and node.wireguard_mtu) and tonumber(node.wireguard_mtu) or nil,
-				reserved = (node.protocol == "wireguard" and node.wireguard_reserved) and node.wireguard_reserved or nil
+				reserved = (node.protocol == "wireguard" and node.wireguard_reserved) and node.wireguard_reserved or nil,
+				port = (node.protocol == "hysteria" and node.port) and tonumber(node.port) or nil,
+				version = node.protocol == "hysteria" and 2 or nil
 			}
 		}
 
@@ -322,7 +377,9 @@ function gen_config_server(node)
 			for i = 1, #node.uuid do
 				clients[i] = {
 					id = node.uuid[i],
-					flow = (node.protocol == "vless" and node.tls == "1" and (node.transport == "raw" or node.transport == "xhttp") and node.flow and node.flow ~= "") and node.flow or nil
+					flow = (node.protocol == "vless"
+					and (node.tls == "1" or (node.decryption and node.decryption ~= "" and node.decryption ~= "none")) 
+					and node.flow and node.flow ~= "") and node.flow or nil
 				}
 			end
 			settings = {
@@ -603,6 +660,7 @@ function gen_config(var)
 	local inbounds = {}
 	local outbounds = {}
 	local routing = nil
+	local observatory = nil
 	local burstObservatory = nil
  	local strategy = nil
 	local COMMON = {}
@@ -833,21 +891,32 @@ function gen_config(var)
 		end
 		table.insert(balancers, {
 			tag = balancer_tag,
-			selector = valid_nodes,
+			selector = api.clone(valid_nodes),
 			fallbackTag = fallback_node_tag,
 			strategy = strategy
 		})
 		if _node.balancingStrategy == "leastPing" or _node.balancingStrategy == "leastLoad" or fallback_node_tag then
-			if not burstObservatory then
-				burstObservatory = {
-					subjectSelector = { "blc-" },
-					pingConfig = {
-						destination = _node.useCustomProbeUrl and _node.probeUrl or nil,
-						interval = (api.format_go_time(_node.probeInterval) ~= "0s") and api.format_go_time(_node.probeInterval) or "1m",
-						sampling = 3,
-						timeout = "5s"
+			if _node.balancingStrategy == "leastLoad" then
+				if not burstObservatory then
+					burstObservatory = {
+						subjectSelector = { "blc-" },
+						pingConfig = {
+							destination = _node.useCustomProbeUrl and _node.probeUrl or nil,
+							interval = (api.format_go_time(_node.probeInterval) ~= "0s") and api.format_go_time(_node.probeInterval) or "1m",
+							sampling = 3,
+							timeout = "5s"
+						}
 					}
-				}
+				end
+			else
+				if not observatory then
+					observatory = {
+						subjectSelector = { "blc-" },
+						probeUrl = _node.useCustomProbeUrl and _node.probeUrl or nil,
+						probeInterval = (api.format_go_time(_node.probeInterval) ~= "0s") and api.format_go_time(_node.probeInterval) or "1m",
+						enableConcurrency = true
+					}
+				end
 			end
 		end
 		local inbound_tag = gen_loopback(loopback_tag, loopback_dst)
@@ -1017,7 +1086,16 @@ function gen_config(var)
 							return outbound_tag, nil
 						end
 					elseif _node.protocol == "_balancing" then
-						return nil, gen_balancer(_node, rule_name)
+						local blc_tag = gen_balancer(_node, rule_name)
+						if rule_name == "default" then
+							for i, ob in ipairs(outbounds) do
+								if ob.protocol == "loopback" and ob.tag == "default" then
+									if i > 1 then table.insert(outbounds, 1, table.remove(outbounds, i)) end
+									break
+								end
+							end
+						end
+						return nil, blc_tag
 					elseif _node.protocol == "_iface" then
 						local outbound_tag
 						if _node.iface then
@@ -1032,7 +1110,11 @@ function gen_config(var)
 								}
 							}
 							outbound_tag = outbound.tag
-							table.insert(outbounds, outbound)
+							if rule_name == "default" then
+								table.insert(outbounds, 1, outbound)
+							else
+								table.insert(outbounds, outbound)
+							end
 							sys.call(string.format("mkdir -p %s && touch %s/%s", api.TMP_IFACE_PATH, api.TMP_IFACE_PATH, _node.iface))
 						end
 						return outbound_tag, nil
@@ -1161,12 +1243,18 @@ function gen_config(var)
 				end
 			end)
 
-			if default_balancerTag then
-				table.insert(rules, {
+			if default_outboundTag or default_balancerTag then
+				local rule = {
 					ruleTag = "default",
-					balancerTag = default_balancerTag,
-					network = "tcp,udp"
-				})
+					outboundTag = default_outboundTag,
+					balancerTag = default_balancerTag
+				}
+				if node.domainStrategy == "IPIfNonMatch" then
+					rule.ip = { "0.0.0.0/0", "::/0" }
+				else
+					rule.network = "tcp,udp"
+				end
+				table.insert(rules, rule)
 			end
 
 			routing = {
@@ -1401,7 +1489,7 @@ function gen_config(var)
 					address = remote_dns_udp_server,
 					port = tonumber(remote_dns_udp_port) or 53,
 					network = _remote_dns_proto or "tcp",
-					nonIPQuery = "drop"
+					nonIPQuery = "reject"
 				}
 			}
 			local type_dns = direct_type_dns
@@ -1571,6 +1659,7 @@ function gen_config(var)
 			fakedns = fakedns,
 			inbounds = inbounds,
 			outbounds = outbounds,
+			observatory = (not burstObservatory) and observatory or nil,
 			burstObservatory = burstObservatory,
 			routing = routing,
 			policy = {
@@ -1647,7 +1736,8 @@ function gen_config(var)
 			if not value["_flag_proxy_tag"] and value["_id"] and s and not no_run and
 			((s.vnext and s.vnext[1] and s.vnext[1].address and s.vnext[1].port) or 
 			(s.servers and s.servers[1] and s.servers[1].address and s.servers[1].port) or
-			(s.peers and s.peers[1] and s.peers[1].endpoint)) then
+			(s.peers and s.peers[1] and s.peers[1].endpoint) or
+			(s.address and s.port)) then
 				sys.call(string.format("echo '%s' >> %s", value["_id"], api.TMP_PATH .. "/direct_node_list"))
 			end
 			for k, v in pairs(config.outbounds[index]) do
@@ -1967,7 +2057,7 @@ function gen_dns_config(var)
 				address = other_type_dns_server or "1.1.1.1",
 				port = other_type_dns_port or 53,
 				network = other_type_dns_proto or "tcp",
-				nonIPQuery = "drop"
+				nonIPQuery = "reject"
 			}
 		})
 	

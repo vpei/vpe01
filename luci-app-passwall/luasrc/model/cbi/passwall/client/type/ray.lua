@@ -40,6 +40,9 @@ o:value("socks", translate("Socks"))
 o:value("shadowsocks", translate("Shadowsocks"))
 o:value("trojan", translate("Trojan"))
 o:value("wireguard", translate("WireGuard"))
+if api.compare_versions(xray_version, ">=", "26.1.13") then
+	o:value("hysteria2", translate("Hysteria2"))
+end
 if api.compare_versions(xray_version, ">=", "1.8.12") then
 	o:value("_balancing", translate("Balancing"))
 end
@@ -61,6 +64,7 @@ for k, e in ipairs(api.get_valid_nodes()) do
 			id = e[".name"],
 			remark = e["remark"],
 			type = e["type"],
+			address = e["address"],
 			chain_proxy = e["chain_proxy"],
 			group = e["group"]
 		}
@@ -192,7 +196,7 @@ o:value("https://www.google.com/generate_204", "Google")
 o:value("https://www.youtube.com/generate_204", "YouTube")
 o:value("https://connect.rom.miui.com/generate_204", "MIUI (CN)")
 o:value("https://connectivitycheck.platform.hicloud.com/generate_204", "HiCloud (CN)")
-o.default = "https://www.google.com/generate_204"
+o.default = o.keylist[3]
 o.description = translate("The URL used to detect the connection status.")
 
 -- 探测间隔
@@ -265,10 +269,13 @@ m.uci:foreach(appname, "shunt_rules", function(e)
 			local pt = s:option(ListValue, _n(e[".name"] .. "_proxy_tag"), string.format('* <a style="color:red">%s</a>', e.remarks .. " " .. translate("Preproxy")))
 			pt:value("", translate("Close"))
 			pt:value("main", translate("Preproxy Node"))
+			pt:depends("__hide__", "1")
 			for k, v in pairs(nodes_table) do
 				o:value(v.id, v.remark)
 				o.group[#o.group+1] = (v.group and v.group ~= "") and v.group or translate("default")
-				pt:depends({ [_n("protocol")] = "_shunt", [_n("preproxy_enabled")] = true, [_n(e[".name"])] = v.id })
+				if not api.is_local_ip(v.address) then  --本地节点禁止使用前置
+					pt:depends({ [_n("protocol")] = "_shunt", [_n("preproxy_enabled")] = true, [_n(e[".name"])] = v.id })
+				end
 			end
 		end
 	end
@@ -305,10 +312,13 @@ if #nodes_table > 0 then
 	local dpt = s:option(ListValue, _n("default_proxy_tag"), string.format('* <a style="color:red">%s</a>', translate("Default Preproxy")), translate("When using, localhost will connect this node first and then use this node to connect the default node."))
 	dpt:value("", translate("Close"))
 	dpt:value("main", translate("Preproxy Node"))
+	dpt:depends("__hide__", "1")
 	for k, v in pairs(nodes_table) do
 		o:value(v.id, v.remark)
 		o.group[#o.group+1] = (v.group and v.group ~= "") and v.group or translate("default")
-		dpt:depends({ [_n("protocol")] = "_shunt", [_n("preproxy_enabled")] = true, [_n("default_node")] = v.id })
+		if not api.is_local_ip(v.address) then
+			dpt:depends({ [_n("protocol")] = "_shunt", [_n("preproxy_enabled")] = true, [_n("default_node")] = v.id })
+		end
 	end
 end
 
@@ -392,8 +402,43 @@ o = s:option(ListValue, _n("flow"), translate("flow"))
 o.default = ""
 o:value("", translate("Disable"))
 o:value("xtls-rprx-vision")
-o:depends({ [_n("protocol")] = "vless", [_n("transport")] = "raw" })
-o:depends({ [_n("protocol")] = "vless", [_n("transport")] = "xhttp" })
+o:depends({ [_n("protocol")] = "vless" })
+
+---- [[hysteria2]]
+o = s:option(Value, _n("hysteria2_hop"), translate("Port hopping range"))
+o.description = translate("Format as 1000:2000 or 1000-2000 Multiple groups are separated by commas (,).")
+o:depends({ [_n("protocol")] = "hysteria2" })
+
+o = s:option(Value, _n("hysteria2_hop_interval"), translate("Hop Interval"), translate("Example:") .. "30s (≥5s)")
+o.placeholder = "30s"
+o.default = "30s"
+o:depends({ [_n("protocol")] = "hysteria2" })
+
+o = s:option(Value, _n("hysteria2_up_mbps"), translate("Max upload Mbps"))
+o:depends({ [_n("protocol")] = "hysteria2" })
+
+o = s:option(Value, _n("hysteria2_down_mbps"), translate("Max download Mbps"))
+o:depends({ [_n("protocol")] = "hysteria2" })
+
+o = s:option(ListValue, _n("hysteria2_obfs_type"), translate("Obfs Type"))
+o:value("", translate("Disable"))
+o:value("salamander")
+o:depends({ [_n("protocol")] = "hysteria2" })
+
+o = s:option(Value, _n("hysteria2_obfs_password"), translate("Obfs Password"))
+o:depends({ [_n("protocol")] = "hysteria2" })
+
+o = s:option(Value, _n("hysteria2_auth_password"), translate("Auth Password"))
+o.password = true
+o:depends({ [_n("protocol")] = "hysteria2"})
+
+o = s:option(Value, _n("hysteria2_idle_timeout"), translate("Idle Timeout"), translate("Example:") .. "30s (4s-120s)")
+o:depends({ [_n("protocol")] = "hysteria2"})
+
+o = s:option(Flag, _n("hysteria2_disable_mtu_discovery"), translate("Disable MTU detection"))
+o.default = "0"
+o:depends({ [_n("protocol")] = "hysteria2"})
+---- [[hysteria2 end]]
 
 o = s:option(Flag, _n("tls"), translate("TLS"))
 o.default = 0
@@ -422,6 +467,7 @@ o:value("http/1.1")
 o:value("h2,http/1.1")
 o:value("h3,h2,http/1.1")
 o:depends({ [_n("tls")] = true, [_n("reality")] = false })
+o:depends({ [_n("protocol")] = "hysteria2" })
 
 -- o = s:option(Value, _n("minversion"), translate("minversion"))
 -- o.default = "1.3"
@@ -430,10 +476,12 @@ o:depends({ [_n("tls")] = true, [_n("reality")] = false })
 
 o = s:option(Value, _n("tls_serverName"), translate("Domain"))
 o:depends({ [_n("tls")] = true })
+o:depends({ [_n("protocol")] = "hysteria2" })
 
 o = s:option(Flag, _n("tls_allowInsecure"), translate("allowInsecure"), translate("Whether unsafe connections are allowed. When checked, Certificate validation will be skipped."))
 o.default = "0"
 o:depends({ [_n("tls")] = true, [_n("reality")] = false })
+o:depends({ [_n("protocol")] = "hysteria2" })
 
 o = s:option(Value, _n("tls_chain_fingerprint"), translate("TLS Chain Fingerprint (SHA256)"), translate("Once set, connects only when the server’s chain fingerprint matches."))
 o:depends({ [_n("tls")] = true, [_n("reality")] = false })
@@ -441,6 +489,7 @@ o:depends({ [_n("tls")] = true, [_n("reality")] = false })
 o = s:option(Flag, _n("ech"), translate("ECH"))
 o.default = "0"
 o:depends({ [_n("tls")] = true, [_n("flow")] = "", [_n("reality")] = false })
+o:depends({ [_n("protocol")] = "hysteria2" })
 
 o = s:option(TextValue, _n("ech_config"), translate("ECH Config"))
 o.default = ""
@@ -556,9 +605,6 @@ o = s:option(DynamicList, _n("tcp_guise_http_path"), translate("HTTP Path"))
 o.placeholder = "/"
 o:depends({ [_n("tcp_guise")] = "http" })
 
-o = s:option(Value, _n("tcp_guise_http_user_agent"), translate("User-Agent"))
-o:depends({ [_n("tcp_guise")] = "http" })
-
 -- [[ mKCP部分 ]]--
 
 o = s:option(ListValue, _n("mkcp_guise"), translate("Camouflage Type"), translate('<br />none: default, no masquerade, data sent is packets with no characteristics.<br />srtp: disguised as an SRTP packet, it will be recognized as video call data (such as FaceTime).<br />utp: packets disguised as uTP will be recognized as bittorrent downloaded data.<br />wechat-video: packets disguised as WeChat video calls.<br />dtls: disguised as DTLS 1.2 packet.<br />wireguard: disguised as a WireGuard packet. (not really WireGuard protocol)<br />dns: Disguising traffic as DNS requests.'))
@@ -606,9 +652,6 @@ o = s:option(Value, _n("ws_path"), translate("WebSocket Path"))
 o.placeholder = "/"
 o:depends({ [_n("transport")] = "ws" })
 
-o = s:option(Value, _n("ws_user_agent"), translate("User-Agent"))
-o:depends({ [_n("transport")] = "ws" })
-
 o = s:option(Value, _n("ws_heartbeatPeriod"), translate("HeartbeatPeriod(second)"))
 o.datatype = "integer"
 o:depends({ [_n("transport")] = "ws" })
@@ -647,9 +690,6 @@ o:depends({ [_n("transport")] = "httpupgrade" })
 
 o = s:option(Value, _n("httpupgrade_path"), translate("HttpUpgrade Path"))
 o.placeholder = "/"
-o:depends({ [_n("transport")] = "httpupgrade" })
-
-o = s:option(Value, _n("httpupgrade_user_agent"), translate("User-Agent"))
 o:depends({ [_n("transport")] = "httpupgrade" })
 
 -- [[ XHTTP部分 ]]--
@@ -710,6 +750,13 @@ o.custom_remove = function(self, section, value)
 	m:del(section, "download_address")
 end
 
+-- [[ User-Agent ]]--
+o = s:option(Value, _n("user_agent"), translate("User-Agent"))
+o:depends({ [_n("tcp_guise")] = "http" })
+o:depends({ [_n("transport")] = "ws" })
+o:depends({ [_n("transport")] = "httpupgrade" })
+o:depends({ [_n("transport")] = "xhttp" })
+
 -- [[ Mux.Cool ]]--
 o = s:option(Flag, _n("mux"), "Mux", translate("Enable Mux.Cool"))
 o:depends({ [_n("protocol")] = "vmess" })
@@ -736,6 +783,11 @@ o.default = 0
 --[[tcpMptcp]]
 o = s:option(Flag, _n("tcpMptcp"), "tcpMptcp", translate("Enable Multipath TCP, need to be enabled in both server and client configuration."))
 o.default = 0
+
+o = s:option(Value, _n("preconns"), translate("Pre-connections"), translate("Number of early established connections to reduce latency."))
+o.datatype = "uinteger"
+o.placeholder = 0
+o:depends({ [_n("protocol")] = "vless" })
 
 o = s:option(ListValue, _n("chain_proxy"), translate("Chain Proxy"))
 o:value("", translate("Close(Not use)"))
@@ -767,7 +819,8 @@ for k, v in pairs(nodes_table) do
 end
 
 for i, v in ipairs(s.fields[_n("protocol")].keylist) do
-	if not v:find("_") then
+	if not v:find("_") and v ~= "hysteria2" then
+		s.fields[_n("tcp_fast_open")]:depends({ [_n("protocol")] = v })
 		s.fields[_n("tcpMptcp")]:depends({ [_n("protocol")] = v })
 		s.fields[_n("chain_proxy")]:depends({ [_n("protocol")] = v })
 	end

@@ -44,8 +44,7 @@ local ss_type_default = get_core("ss_type", {{has_ss,"shadowsocks-libev"},{has_s
 local trojan_type_default = get_core("trojan_type", {{has_singbox,"sing-box"},{has_xray,"xray"}})
 local vmess_type_default = get_core("vmess_type", {{has_xray,"xray"},{has_singbox,"sing-box"}})
 local vless_type_default = get_core("vless_type", {{has_xray,"xray"},{has_singbox,"sing-box"}})
-local hysteria2_type_default = get_core("hysteria2_type", {{has_hysteria2,"hysteria2"},{has_singbox,"sing-box"}})
-
+local hysteria2_type_default = get_core("hysteria2_type", {{has_hysteria2,"hysteria2"},{has_singbox,"sing-box"},{has_xray,"xray"}})
 local domain_strategy_default = uci:get(appname, "@global_subscribe[0]", "domain_strategy") or ""
 local domain_strategy_node = ""
 local preproxy_node_group, to_node_group, chain_node_type = "", "", ""
@@ -423,8 +422,12 @@ local function get_subscribe_info(cfgid, value)
 		return
 	end
 	value = value:gsub("%s+", "")
-	local expired_date = value:match("套餐到期：(.+)")
-	local rem_traffic = value:match("剩余流量：(.+)")
+	local date_patterns = {"套餐到期：(.+)", "过期时间：(.+)", "有效期至：(.+)", "到期时间：(.+)", "截止日期：(.+)"}
+	local expired_date
+	for _, p in ipairs(date_patterns) do expired_date = value:match(p) or expired_date end
+	local rem_patterns = {"剩余流量：(.+)", "流量剩余：(.+)", "可用流量：(.+)", "套餐剩余：(.+)"}
+	local rem_traffic
+	for _, p in ipairs(rem_patterns) do rem_traffic = value:match(p) or rem_traffic end
 	subscribe_info[cfgid] = subscribe_info[cfgid] or {expired_date = "", rem_traffic = ""}
 	if expired_date then
 		subscribe_info[cfgid]["expired_date"] = expired_date
@@ -837,6 +840,22 @@ local function processData(szType, content, add_mode, group)
 						if params.serviceName then result.grpc_serviceName = params.serviceName end
 						result.grpc_mode = params.mode or "gun"
 					end
+					if params.type == 'xhttp' then
+						if result.type ~= "Xray" then
+							result.error_msg = "请更换 Xray 以支持 xhttp 传输方式."
+						end
+						result.xhttp_host = params.host
+						result.xhttp_path = params.path
+						result.xhttp_mode = params.mode or "auto"
+						result.use_xhttp_extra = (params.extra and params.extra ~= "") and "1" or nil
+						result.xhttp_extra = (params.extra and params.extra ~= "") and api.base64Encode(params.extra) or nil
+						local success, Data = pcall(jsonParse, params.extra)
+						if success and Data then
+							local address = (Data.extra and Data.extra.downloadSettings and Data.extra.downloadSettings.address)
+									or (Data.downloadSettings and Data.downloadSettings.address)
+							result.download_address = (address and address ~= "") and address:gsub("^%[", ""):gsub("%]$", "") or nil
+						end
+					end
 					result.tls = "0"
 					if params.security == "tls" or params.security == "reality" then
 						result.tls = "1"
@@ -1208,8 +1227,6 @@ local function processData(szType, content, add_mode, group)
 					local address = (Data.extra and Data.extra.downloadSettings and Data.extra.downloadSettings.address)
 							or (Data.downloadSettings and Data.downloadSettings.address)
 					result.download_address = (address and address ~= "") and address:gsub("^%[", ""):gsub("%]$", "") or nil
-				else
-					result.download_address = nil
 				end
 			end
 			if params.type == 'httpupgrade' then
@@ -1358,8 +1375,9 @@ local function processData(szType, content, add_mode, group)
 		result.hysteria2_tls_pinSHA256 = params.pinSHA256
 		result.hysteria2_hop = params.mport
 
-		if hysteria2_type_default == "sing-box" and has_singbox then
-			result.type = 'sing-box'
+		if (hysteria2_type_default == "sing-box" and has_singbox) or (hysteria2_type_default == "xray" and has_xray) then
+			local is_singbox = hysteria2_type_default == "sing-box" and has_singbox
+			result.type = is_singbox and 'sing-box' or 'Xray'
 			result.protocol = "hysteria2"
 			if params["obfs-password"] or params["obfs_password"] then
 				result.hysteria2_obfs_type = "salamander"
@@ -1522,12 +1540,15 @@ local function processData(szType, content, add_mode, group)
 end
 
 local function curl(url, file, ua, mode)
+	if not url or url == "" then return 404 end
 	local curl_args = {
 		"-skL", "-w %{http_code}", "--retry 3", "--connect-timeout 3"
 	}
 	if ua and ua ~= "" and ua ~= "curl" then
+		ua = (ua == "passwall2") and ("passwall2/" .. api.get_version()) or ua
 		curl_args[#curl_args + 1] = '--user-agent "' .. ua .. '"'
 	end
+	curl_args[#curl_args + 1] = get_headers()
 	local return_code, result
 	if mode == "direct" then
 		return_code, result = api.curl_direct(url, file, curl_args)
@@ -1537,6 +1558,57 @@ local function curl(url, file, ua, mode)
 		return_code, result = api.curl_auto(url, file, curl_args)
 	end
 	return tonumber(result)
+end
+
+function get_headers()
+	local cache_file = "/tmp/etc/" .. appname .. "_tmp/sub_curl_headers"
+	if fs.access(cache_file) then
+		return luci.sys.exec("cat " .. cache_file)
+	end
+	local headers = {}
+
+	local function readfile(path)
+		local f = io.open(path, "r")
+		if not f then return nil end
+		local c = f:read("*a")
+		f:close()
+		return api.trim(c)
+	end
+
+	headers[#headers + 1] = "x-device-os: OpenWrt"
+
+	local rel = readfile("/etc/openwrt_release")
+	local os_ver = rel and rel:match("DISTRIB_RELEASE='([^']+)'")
+	if os_ver then
+		headers[#headers + 1] = "x-ver-os: " .. os_ver
+	end
+
+	local model = readfile("/tmp/sysinfo/model")
+	if model then
+		headers[#headers + 1] = "x-device-model: " .. model
+	end
+
+	local mac = readfile("/sys/class/net/eth0/address")
+	if mac and model then
+		local raw = mac .. "-" .. model
+		local p = io.popen("printf '%s' '" .. raw:gsub("'", "'\\''") .. "' | sha256sum")
+		if p then
+			local hash = p:read("*l")
+			p:close()
+			hash = hash and hash:match("^%w+")
+			if hash then
+				headers[#headers + 1] = "x-hwid: " .. hash
+			end
+		end
+	end
+
+	local out = {}
+	for i = 1, #headers do
+		out[i] = "-H '" .. headers[i]:gsub("'", "'\\''") .. "'"
+	end
+	local headers_str = table.concat(out, " ")
+	local f = io.open(cache_file, "w"); if f then f:write(headers_str); f:close() end
+	return headers_str
 end
 
 local function truncate_nodes(group)
@@ -1915,8 +1987,8 @@ local execute = function()
 
 		for index, value in ipairs(subscribe_list) do
 			local cfgid = value[".name"]
-			local remark = value.remark
-			local url = value.url
+			local remark = value.remark or ""
+			local url = value.url or ""
 			if value.allowInsecure and value.allowInsecure ~= "1" then
 				allowInsecure_default = nil
 			end

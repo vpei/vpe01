@@ -94,6 +94,9 @@ msgstr "客戶端代理"
 msgid "When selected, devices in LAN can transparent proxy. Otherwise, it will not be proxy. But you can still use access control to allow the designated device to proxy."
 msgstr "當勾選時，局域網內的設備可以透明代理。否則，將不代理。但您仍然可以使用訪問控制允許指定的設備代理。"
 
+msgid "Missing components, transparent proxy is unavailable."
+msgstr "缺少組件，透明代理無法使用。"
+
 msgid "Socks Config"
 msgstr "Socks 配置"
 
@@ -559,6 +562,9 @@ msgstr "自動檢測延迟"
 msgid "Show server address and port"
 msgstr "顯示服務器地址和端口"
 
+msgid "URL Test Address"
+msgstr "URL 測試地址"
+
 msgid "URL Test"
 msgstr "URL 測試"
 
@@ -781,6 +787,9 @@ msgstr "注意，當使用TCP健康檢查時負載均衡的節點配置參數必
 msgid "Node Address"
 msgstr "節點地址"
 
+msgid "Node address cannot be empty."
+msgstr "節點地址不能為空。"
+
 msgid "Node Port"
 msgstr "節點端口"
 
@@ -865,8 +874,14 @@ msgstr "小時"
 msgid "Hour"
 msgstr "小時"
 
-msgid "Location of V2ray/Xray asset"
-msgstr "V2ray/Xray 资源文件目錄"
+msgid "GeoIP Update URL"
+msgstr "GeoIP 更新 URL"
+
+msgid "Geosite Update URL"
+msgstr "Geosite 更新 URL"
+
+msgid "Location of Geo rule files"
+msgstr "Geo 资源文件目錄"
 
 msgid "This variable specifies a directory where geoip.dat and geosite.dat files are."
 msgstr "此變量指定geoip.dat和geosite.dat文件所在的目錄。"
@@ -1162,6 +1177,12 @@ msgstr "本地端口"
 msgid "Fast Open"
 msgstr "快速打開"
 
+msgid "Pre-connections"
+msgstr "預連接"
+
+msgid "Number of early established connections to reduce latency."
+msgstr "預連接的數量，用於降低延遲。"
+
 msgid "plugin"
 msgstr "插件"
 
@@ -1324,8 +1345,8 @@ msgstr "账号密碼"
 msgid "Username and Password must be used together!"
 msgstr "账号和密碼必須同時使用！"
 
-msgid "Firewall tools"
-msgstr "防火墙工具"
+msgid "Prefer firewall tools"
+msgstr "首選防火牆工具"
 
 msgid "IPv6 TProxy"
 msgstr "IPv6透明代理(TProxy)"
@@ -1534,18 +1555,6 @@ msgstr "缓衝区大小"
 msgid "Buffer size for every connection (kB)"
 msgstr "每一個連接的缓衝区大小（kB）"
 
-msgid "Custom geoip Path"
-msgstr "自定义geoip文件路径"
-
-msgid "Custom geoip URL"
-msgstr "自定义geoip文件更新鏈接"
-
-msgid "Custom geosite Path"
-msgstr "自定义geosite文件路径"
-
-msgid "Custom geosite URL"
-msgstr "自定义geosite文件更新鏈接"
-
 msgid "Handshake Timeout"
 msgstr "握手超時 "
 
@@ -1557,12 +1566,6 @@ msgstr "端口跳跃時間 "
 
 msgid "HeartbeatPeriod(second)"
 msgstr "心跳周期（單位：秒）"
-
-msgid "Remove resource files"
-msgstr "刪除资源文件"
-
-msgid "Sing-Box will automatically download resource files when starting, you can use this feature achieve upgrade resource files."
-msgstr "Sing-Box 会在啟動時自動下載资源文件，您可以使用此功能實现升級资源文件。"
 
 msgid "Override the connection destination address"
 msgstr "覆盖連接目標地址"
@@ -1906,8 +1909,17 @@ msgstr "脚本已经在運行，不重復運行，退出."
 msgid "Stop the script and wait for a timeout, then exit without repeating the process."
 msgstr "停止脚本等待超時，不重復運行，退出."
 
-msgid "%s Transparent proxy base dependencies %s Not installed..."
-msgstr "%s 透明代理基础依赖 %s 未安装..."
+msgid "Warning: The %s application environment is incomplete. Switch to %s. (%s)"
+msgstr "警告：%s 應用環境不完整，切換至 %s。 (%s)"
+
+msgid "Note: Dnsmasq (%s) is below 2.90. Upgrading is recommended to improve stability."
+msgstr "提示：Dnsmasq (%s) 低於 2.90，建議升級以增強穩定性。"
+
+msgid "Warning: %s transparent proxy is missing basic dependency %s!"
+msgstr "警告：%s 透明代理缺少基礎依賴 %s！"
+
+msgid "Warning: Not compatible with any transparent proxy system environment."
+msgstr "警告：不滿足任何透明代理系統環境。"
 
 msgid "%s does not have execute permissions and cannot be started: %s %s"
 msgstr "%s 沒有执行權限，無法啟動：%s %s"
@@ -1983,18 +1995,6 @@ msgstr "遠程 DNS：%s"
 
 msgid "The program has started. Please stop it and then restart it!"
 msgstr "程序已啟動，先停止再重新啟動!"
-
-msgid "The system does not have iptables or ipset installed, or Dnsmasq does not have ipset support enabled, so iptables+ipset transparent proxy cannot be used!"
-msgstr "系統未安装iptables或ipset或Dnsmasq沒有開啟ipset支持，無法使用iptables+ipset透明代理！"
-
-msgid "fw4 detected, use nftables to transparent proxy."
-msgstr "檢測到fw4，使用nftables进行透明代理。"
-
-msgid "The Dnsmasq package does not meet the requirements for transparent proxy in nftables. If you need to use it, please ensure that the dnsmasq version is 2.87 or higher and that nftset support is enabled."
-msgstr "Dnsmasq軟件包不满足nftables透明代理要求，如需使用請確保dnsmasq版本在2.87以上並開啟nftset支持。"
-
-msgid "If your Dnsmasq version is lower than 2.90, it is recommended to upgrade to version 2.90 or higher to avoid Dnsmasq crashing in some cases!"
-msgstr "Dnsmasq版本低於2.90，建議升級至2.90及以上版本以避免部分情況下Dnsmasq崩溃問題！"
 
 msgid "Running complete!"
 msgstr "運行完成！"
@@ -2128,17 +2128,32 @@ msgstr "節點：%s:%s，權重：%s"
 msgid "Start updating the rules..."
 msgstr "開始更新規則..."
 
+msgid "Download file size verification error. Original file size: %sB. Downloaded file size: %sB."
+msgstr "下載檔案大小校驗出錯，原始檔案大小 %sB，下載檔案大小：%sB。"
+
+msgid "Downloaded file is empty or an error occurred while reading it."
+msgstr "下載的文件為空或讀取文件時發生錯誤。"
+
 msgid "%s Start updating..."
 msgstr "%s 開始更新..."
 
 msgid "%s version is the same and does not need to be updated."
 msgstr "%s 版本一致，無需更新。"
 
+msgid "%s an error occurred during the file download process. Please try downloading again."
+msgstr "%s 下載檔案過程出錯，嘗試重新下載。"
+
+msgid "%s an error occurred while downloading the file. Please check your network or the download link and try again!"
+msgstr "%s 下載檔案過程出錯，請檢查網頁或下載連結後重試！"
+
 msgid "%s update success."
 msgstr "%s 更新成功。"
 
-msgid "%s update failed, please try again later."
-msgstr "%s 更新失敗，請稍後再試。"
+msgid "%s update failed, please try again later or change URL."
+msgstr "%s 更新失敗，請稍後再試或更換 URL。"
+
+msgid "%s update error!"
+msgstr "%s 更新發生錯誤！"
 
 msgid "Restart the service and apply the new rules."
 msgstr "重啟服務，應用新的規則。"
