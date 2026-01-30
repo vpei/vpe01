@@ -9,7 +9,6 @@ util = require "luci.util"
 datatypes = require "luci.cbi.datatypes"
 jsonc = require "luci.jsonc"
 i18n = require "luci.i18n"
-conf = require "luci.config"
 
 curl_args = { "-skfL", "--connect-timeout 3", "--retry 3" }
 command_timeout = 300
@@ -21,7 +20,9 @@ CACHE_PATH = "/tmp/etc/passwall2_tmp"
 TMP_PATH = "/tmp/etc/" .. appname
 TMP_IFACE_PATH = TMP_PATH .. "/iface"
 
-local lang = conf.main.lang or "auto"
+NEW_PORT = nil
+
+local lang = uci:get("luci", "main", "lang") or "auto"
 if lang == "auto" then
 	local auto_lang = uci:get(appname, "@global[0]", "auto_lang")
 	if auto_lang then lang = auto_lang end
@@ -110,10 +111,21 @@ end
 function set_cache_var(key, val)
 	sys.call(string.format('. /usr/share/passwall2/utils.sh ; set_cache_var %s "%s"', key, val))
 end
+
 function get_cache_var(key)
 	local val = sys.exec(string.format('. /usr/share/passwall2/utils.sh ; echo -n $(get_cache_var %s)', key))
 	if val == "" then val = nil end
 	return val
+end
+
+function get_new_port()
+	local cmd_format = ". /usr/share/passwall2/utils.sh ; echo -n $(get_new_port %s tcp,udp)"
+	local set_port = 0
+	if NEW_PORT and tonumber(NEW_PORT) then
+		set_port = tonumber(NEW_PORT) + 1
+	end
+	NEW_PORT = tonumber(sys.exec(string.format(cmd_format, set_port == 0 and "auto" or set_port)))
+	return NEW_PORT
 end
 
 function exec_call(cmd)
@@ -1246,18 +1258,18 @@ function set_apply_on_parse(map)
 	if not map then
 		return
 	end
-	local lang = conf.main.lang or "auto"
+	local lang = uci:get("luci", "main", "lang") or "auto"
 	if lang == "auto" then
 		local http = require "luci.http"
 		local aclang = http.getenv("HTTP_ACCEPT_LANGUAGE") or ""
 		for lpat in aclang:gmatch("[%w-]+") do
 			lpat = lpat and lpat:gsub("-", "_")
-			if conf.languages[lpat] then
+			if uci:get("luci", "languages", lpat) then
 				lang = lpat
 				break
 			end
 			lpat = lpat and lpat:lower()
-			if conf.languages[lpat] then
+			if uci:get("luci", "languages", lpat) then
 				lang = lpat
 				break
 			end

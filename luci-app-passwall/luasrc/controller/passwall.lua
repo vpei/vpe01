@@ -11,6 +11,7 @@ local http = require "luci.http"
 local util = require "luci.util"
 local i18n = require "luci.i18n"
 local jsonStringify = luci.jsonc.stringify
+local jsonParse = luci.jsonc.parse
 
 function index()
 	if not nixio.fs.access("/etc/config/passwall") then
@@ -79,6 +80,7 @@ function index()
 	entry({"admin", "services", appname, "ping_node"}, call("ping_node")).leaf = true
 	entry({"admin", "services", appname, "urltest_node"}, call("urltest_node")).leaf = true
 	entry({"admin", "services", appname, "add_node"}, call("add_node")).leaf = true
+	entry({"admin", "services", appname, "update_node"}, call("update_node")).leaf = true
 	entry({"admin", "services", appname, "set_node"}, call("set_node")).leaf = true
 	entry({"admin", "services", appname, "copy_node"}, call("copy_node")).leaf = true
 	entry({"admin", "services", appname, "clear_all_nodes"}, call("clear_all_nodes")).leaf = true
@@ -117,6 +119,16 @@ end
 local function http_write_json(content)
 	http.prepare_content("application/json")
 	http.write(jsonStringify(content or {code = 1}))
+end
+
+local function http_write_json_ok(data)
+	http.prepare_content("application/json")
+	http.write(jsonStringify({code = 1, data = data}))
+end
+
+local function http_write_json_error(data)
+	http.prepare_content("application/json")
+	http.write(jsonStringify({code = 0, data = data}))
 end
 
 function reset_config()
@@ -412,6 +424,8 @@ function add_node()
 		uci:set(appname, uuid, "group", group)
 	end
 
+	uci:set(appname, uuid, "type", "Socks")
+
 	if redirect == "1" then
 		api.uci_save(uci, appname)
 		http.redirect(api.url("node_config", uuid))
@@ -419,6 +433,23 @@ function add_node()
 		api.uci_save(uci, appname, true, true)
 		http_write_json({result = uuid})
 	end
+end
+
+function update_node()
+	local id = http.formvalue("id") -- Node id
+	local data = http.formvalue("data") -- json new Data
+	if id and data then
+		local data_t = jsonParse(data) or {}
+		if next(data_t) then
+			for k, v in pairs(data_t) do
+				uci:set(appname, id, k, v)
+			end
+			api.uci_save(uci, appname)
+			http_write_json_ok()
+			return
+		end
+	end
+	http_write_json_error()
 end
 
 function set_node()
@@ -833,6 +864,25 @@ function geo_view()
 		http.write(i18n.translate("Please enter query content!"))
 		return
 	end
+	local function get_rules(str, type)
+		local remarks = {}
+		uci:foreach(appname, "shunt_rules", function(s)
+			local list
+			if type == "geoip" then list = s.ip_list else list = s.domain_list end
+			for line in string.gmatch((list or ""), "[^\r\n]+") do
+				if line ~= "" and not line:find("#") then
+					local prefix, main = line:match("^(.-):(.*)")
+					if not main then main = line end
+					if type == "geoip" and (api.datatypes.ipaddr(str) or api.datatypes.ip6addr(str)) then
+						if main:find(str, 1, true) and s.remarks then remarks[#remarks + 1] = s.remarks end
+					else
+						if main == str and s.remarks then remarks[#remarks + 1] = s.remarks end
+					end
+				end
+			end
+		end)
+		return remarks
+	end
 	local geo_dir = (uci:get(appname, "@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/"):match("^(.*)/")
 	local geosite_path = geo_dir .. "/geosite.dat"
 	local geoip_path = geo_dir .. "/geoip.dat"
@@ -847,13 +897,22 @@ function geo_view()
 		cmd = string.format("geoview -type %s -action lookup -input '%s' -value '%s' -lowmem=true", geo_type, file_path, value)
 		geo_string = luci.sys.exec(cmd):lower()
 		if geo_string ~= "" then
-			local lines = {}
-			for line in geo_string:gmatch("([^\n]*)\n?") do
-				if line ~= "" then
-					table.insert(lines, geo_type .. ":" .. line)
+			local lines, rules, seen = {}, {}, {}
+			for line in geo_string:gmatch("([^\n]+)") do
+				lines[#lines + 1] = geo_type .. ":" .. line
+				for _, r in ipairs(get_rules(line, geo_type) or {}) do
+					if not seen[r] then seen[r] = true; rules[#rules + 1] = r end
 				end
 			end
+			for _, r in ipairs(get_rules(value, geo_type) or {}) do
+				if not seen[r] then seen[r] = true; rules[#rules + 1] = r end
+			end
 			geo_string = table.concat(lines, "\n")
+			if #rules > 0 then
+				geo_string = geo_string .. "\n--------------------\n"
+				geo_string = geo_string .. i18n.translate("Rules containing this value:") .. "\n"
+				geo_string = geo_string .. table.concat(rules, "\n")
+			end
 		end
 	elseif action == "extract" then
 		local prefix, list = value:match("^(geoip:)(.*)$")
