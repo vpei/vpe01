@@ -14,6 +14,9 @@
     --success-dark: #047857;
     --warning-color: #f59e0b;
     --error-color: #dc2626;
+    --tip-color: #f9bb51;
+    --info-color: #2563eb;
+    --watchdog-color: #b300ff;
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     --radius-sm: 6px;
@@ -21,7 +24,7 @@
     --radius-lg: 8px;
     --transition-fast: 0.15s ease;
     --transition-normal: 0.3s ease;
-    
+
     --control-height: 36px;
     --card-padding: 6px 8px;
     --gap-size: 16px;
@@ -40,6 +43,11 @@
     --primary-color: #3b82f6;
     --success-color: #34d399;
     --success-dark: #10b981;
+    --error-color: #ff7070;
+    --tip-color: #f9bb51;
+    --warning-color: #fa41c8;
+    --watchdog-color: #c147f5;
+    --info-color: #2563eb;
 }
 
 .oc * {
@@ -204,8 +212,8 @@
     padding: 8px 32px 8px 12px;
     border: 1px solid var(--border-light);
     border-radius: var(--radius-sm);
-    background: var(--bg-white);
-    color: var(--text-primary);
+    background: var(--bg-white) !important;
+    color: var(--text-primary) !important;
     font-size: 13px;
     appearance: none;
     cursor: pointer;
@@ -369,12 +377,12 @@
         grid-template-columns: 1fr;
         gap: 12px;
     }
-    
+
     .config-item {
         width: 100%;
         max-width: 100%;
     }
-    
+
     .select-class {
         max-width: 100%;
         font-size: 13px;
@@ -389,38 +397,38 @@
         max-height: 90vh;
         overflow-y: auto;
     }
-    
+
     .config-grid {
         grid-template-columns: 1fr;
         gap: 12px;
     }
-    
+
     .config-item {
         text-align: center;
     }
-    
+
     .select-popup-header {
         font-size: 16px;
         margin-bottom: 16px;
         padding-bottom: 12px;
     }
-    
+
     .select-config-section {
         padding: 12px;
         margin-bottom: 16px;
     }
-    
+
     .select-popup-body {
         max-height: 200px;
     }
-    
+
     .select-option {
         padding: 10px 12px;
         font-size: 13px;
         align-items: flex-start;
         gap: 4px;
     }
-    
+
     .custom-option-input {
         font-size: 13px;
         padding: 10px;
@@ -433,32 +441,32 @@
         width: 80%;
         padding: 12px;
     }
-    
+
     .select-popup-header {
         font-size: 15px;
         margin-bottom: 12px;
     }
-    
+
     .select-config-section {
         padding: 10px;
     }
-    
+
     .config-label {
         font-size: 12px;
     }
-    
+
     .select-class {
         font-size: 12px;
         padding: 6px 28px 6px 10px;
     }
-    
+
     .config-item::after {
         right: 10px;
         border-left: 3px solid transparent;
         border-right: 3px solid transparent;
         border-top: 3px solid var(--text-secondary);
     }
-    
+
     .select-option {
         padding: 8px 10px;
         font-size: 12px;
@@ -578,7 +586,7 @@
                         <option value="0"><%:Not Set%></option>
                     </select>
                 </div>
-                
+
                 <div class="config-item">
                     <div class="config-label"><%:Release Branch%></div>
                     <select class="select-class" id="RELEASE_BRANCH_CDN">
@@ -586,7 +594,7 @@
                         <option value="dev">Developer</option>
                     </select>
                 </div>
-                
+
                 <div class="config-item">
                     <div class="config-label">
                         <%:Smart Core%>
@@ -605,7 +613,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="select-popup-body">
             <div class="select-option" data-value="https://raw.githubusercontent.com/">
                 <span>https://raw.githubusercontent.com/ (<%:RAW address%>)</span>
@@ -640,21 +648,21 @@
     var smart_enable_cdn = document.getElementById('SMART_ENABLE_CDN');
 
     function initDarkMode() {
-        var ocContainer = document.querySelector('.oc');
-        if (!ocContainer) return;
-        
-        var shouldUseDark = isDarkBackground(document.body);
-        
-        if (shouldUseDark) {
-            ocContainer.setAttribute('data-darkmode', 'true');
-        } else {
-            ocContainer.removeAttribute('data-darkmode');
-        }
-    }
+        var ocContainers = document.querySelectorAll('.oc');
+        if (!ocContainers.length) return;
 
-    document.addEventListener('DOMContentLoaded', function() {
-        initDarkMode();
-    });
+        var shouldUseDark = isDarkBackground(document.body);
+
+        ocContainers.forEach(function(ocContainer) {
+            if (shouldUseDark) {
+                ocContainer.setAttribute('data-darkmode', 'true');
+                document.documentElement.setAttribute('data-darkmode', 'true');
+            } else {
+                ocContainer.removeAttribute('data-darkmode');
+                document.documentElement.removeAttribute('data-darkmode');
+            }
+        });
+    }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initDarkMode);
@@ -691,7 +699,7 @@
             }
         });
     }
-    
+
     function isValidURL(str) {
         var pattern = new RegExp('^(https?:\\/\\/)?'+ // protocol
             '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|'+ // domain name
@@ -701,7 +709,7 @@
             '(\\#[-a-z\\d_]*)?'+'\/$','i'); // fragment locator
         return !!pattern.test(str);
     }
-    
+
     function HTTP_delay(domain, ID) {
         var xhr = new XMLHttpRequest();
         xhr.open('GET', '/cgi-bin/luci/admin/services/openclash/website_check?domain=' + encodeURIComponent(domain), true);
@@ -751,13 +759,13 @@
 
         xhr.send();
     }
-    
+
     function updateCDNStatus(element, status, text) {
         var existingStatus = element.querySelector('.cdn-status');
         if (existingStatus) {
             existingStatus.remove();
         }
-        
+
         var statusSpan = document.createElement('span');
         statusSpan.className = 'cdn-status ' + status;
         statusSpan.textContent = text;
@@ -790,7 +798,7 @@
             }
         }, Math.floor(Math.random()*(7-3+1)+3)*1000);
     }
-    
+
     function select_window_close(event) {
         var selectPopup = document.getElementById('selectPopup');
         if (!selectPopup.contains(event.target)) {
