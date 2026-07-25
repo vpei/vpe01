@@ -49,6 +49,12 @@ o.rewrite_option = o.option
 o = s:option(Value, _n("realm_url"), translate("Realm URL"), translate("Example:") .. "realm://public@realm.hy2.io/your-realm-name")
 o.rewrite_option = o.option
 o:depends({ [_n("realms")] = "1" })
+o.validate = function(self, value)
+	value = api.trim(value)
+	local realm = api.parse_realm_uri(value)
+	if realm then return value end
+	return nil, translate("Invalid Realm URL.")
+end
 
 o = s:option(DynamicList, _n("realm_stun"), translate("Realm STUN"))
 o.default = { "stun.sip.us:3478", "stun.nextcloud.com:3478", "global.stun.twilio.com:3478" }
@@ -69,6 +75,20 @@ o = s:option(Value, _n("obfs_password"), translate("Obfs Password"))
 o.rewrite_option = o.option
 o:depends({ [_n("obfs_type")] = "salamander" })
 o:depends({ [_n("obfs_type")] = "gecko" })
+
+o = s:option(Value, _n("obfs_MinPacketSize"), translate("Gecko Packet Size (min)"))
+o.datatype = "uinteger"
+o.placeholder = "512"
+o.default = "512"
+o:depends({ [_n("obfs_type")] = "gecko" })
+o.rewrite_option = o.option
+
+o = s:option(Value, _n("obfs_MaxPacketSize"), translate("Gecko Packet Size (max)"))
+o.datatype = "uinteger"
+o.placeholder = "1200"
+o.default = "1200"
+o:depends({ [_n("obfs_type")] = "gecko" })
+o.rewrite_option = o.option
 
 o = s:option(Flag, _n("fast_open"), translate("Fast Open"))
 o.default = "0"
@@ -92,10 +112,12 @@ o.rewrite_option = o.option
 o = s:option(Value, _n("recv_window_conn"), translate("QUIC connection receive window"))
 o.rewrite_option = o.option
 
-o = s:option(Value, _n("idle_timeout"), translate("Idle Timeout"), translate("Example:") .. "30s (4s~120s)")
+o = s:option(Value, _n("idle_timeout"), translate("Idle Timeout"), translate("Units:seconds") .. " (4~120)")
+o.datatype = "range(4,120)"
 o.rewrite_option = o.option
 
-o = s:option(Value, _n("keep_alive_period"), translate("QUIC KeepAlive interval"), translate("Example:") .. "10s (2s~60s)")
+o = s:option(Value, _n("keep_alive_period"), translate("QUIC KeepAlive interval"), translate("Units:seconds") .. " (2~60)")
+o.datatype = "range(2,60)"
 o.rewrite_option = o.option
 
 o = s:option(Flag, _n("disable_mtu_discovery"), translate("Disable MTU detection"))

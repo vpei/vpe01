@@ -14,6 +14,8 @@ local GLOBAL = {
 
 local xray_version = api.get_app_version("xray")
 
+local xray_min_version = "26.3.27"
+
 local function get_domain_excluded()
 	local path = string.format("/usr/share/%s/rules/domains_excluded", appname)
 	local content = fs.readfile(path)
@@ -144,27 +146,21 @@ function gen_outbound(flag, node, tag, proxy_table)
 					mark = 255,
 					domainStrategy = node.domain_strategy or "UseIP",
 					tcpFastOpen = (node.tcp_fast_open == "1") and true or nil,
-					tcpMptcp = (node.tcpMptcp == "1") and true or nil
+					tcpMptcp = (node.tcpMptcp == "1") and true or nil,
+					happyEyeballs = (node.happy_eyeballs == "1") and {
+						TryDelayMs = 250,
+						PrioritizeIPv6 = false,
+						Interleave = 1,
+						MaxConcurrentTry = 4
+					} or nil
 				},
-				network = node.transport,
+				[(api.compare_versions(xray_version, "<", "26.7.11")) and "network" or "method"] = node.transport, -- Todo: Remove version check and "network"
 				security = node.stream_security,
 				tlsSettings = (node.stream_security == "tls") and {
 					serverName = node.tls_serverName,
-					allowInsecure = (function()
-								if node.tls_pinSHA256 and node.tls_pinSHA256 ~= "" then return nil end
-								if api.compare_versions(os.date("%Y.%m.%d"), "<", "2026.6.1") and node.tls_allowInsecure == "1" then return true end
-							end)(),
 					fingerprint = (node.type == "Xray" and node.utls == "1" and node.fingerprint and node.fingerprint ~= "") and node.fingerprint or nil,
-					pinnedPeerCertSha256 = (function()
-								if api.compare_versions(xray_version, "<", "26.1.31") then return nil end
-								if not node.tls_pinSHA256 then return "" end
-								return node.tls_pinSHA256
-							end)(),
-					verifyPeerCertByName = (function()
-								if api.compare_versions(xray_version, "<", "26.1.31") then return nil end
-								if not node.tls_CertByName then return "" end
-								return node.tls_CertByName
-							end)(),
+					pinnedPeerCertSha256 = node.tls_pinSHA256 or "",
+					verifyPeerCertByName = node.tls_CertByName or "",
 					echConfigList = (node.ech == "1") and node.ech_config or nil,
 					certificates = (node.tls_certificate == "1" and node.tls_certificate_pem ~= "") and {
 						certificate = api.split(node.tls_certificate_pem, "\n"),
@@ -284,10 +280,18 @@ function gen_outbound(flag, node, tag, proxy_table)
 							local o = {
 								type = "salamander",
 								settings = node.hysteria2_obfs_password and {
-									password = node.hysteria2_obfs_password,
-									packetSize = node.hysteria2_obfs_type == "gecko" and "512-1200" or nil
+									password = node.hysteria2_obfs_password
 								} or nil
 							}
+							if node.hysteria2_obfs_type == "gecko" then
+								local min = tonumber(node.hysteria2_obfs_MinPacketSize) or 512
+								local max = tonumber(node.hysteria2_obfs_MaxPacketSize) or 1200
+								if min <= 0 or min > max or max > 2048 then
+									min = 512
+									max = 1200
+								end
+								o.settings.packetSize = min .. "-" .. max
+							end
 							udp[#udp+1] = o
 						end
 						if node.hysteria2_realms then
@@ -641,7 +645,7 @@ function gen_config_server(node)
 				protocol = node.protocol,
 				settings = settings,
 				streamSettings = {
-					network = node.transport,
+					[(api.compare_versions(xray_version, "<", "26.7.11")) and "network" or "method"] = node.transport, -- Todo: Remove version check and "network"
 					security = "none",
 					tlsSettings = ("1" == node.tls) and {
 						disableSystemRoot = false,
@@ -724,10 +728,18 @@ function gen_config_server(node)
 								local o = {
 									type = "salamander",
 									settings = node.hysteria2_obfs_password and {
-										password = node.hysteria2_obfs_password,
-										packetSize = node.hysteria2_obfs_type == "gecko" and "512-1200" or nil
+										password = node.hysteria2_obfs_password
 									} or nil
 								}
+								if node.hysteria2_obfs_type == "gecko" then
+									local min = tonumber(node.hysteria2_obfs_MinPacketSize) or 512
+									local max = tonumber(node.hysteria2_obfs_MaxPacketSize) or 1200
+									if min <= 0 or min > max or max > 2048 then
+										min = 512
+										max = 1200
+									end
+									o.settings.packetSize = min .. "-" .. max
+								end
 								udp[#udp+1] = o
 							end
 							if node.hysteria2_realms then
@@ -773,7 +785,10 @@ function gen_config_server(node)
 		},
 		-- 传出连接
 		outbounds = outbounds,
-		routing = routing
+		routing = routing,
+		version = {
+			min = xray_min_version
+		}
 	}
 
 	local alpn = {}
@@ -799,7 +814,8 @@ function gen_config_server(node)
 				serverNames = node.reality_serverNames or {},
 				privateKey = node.reality_private_key,
 				shortIds = node.reality_shortId or "",
-				mldsa65Seed = (node.use_mldsa65Seed == "1") and node.reality_mldsa65Seed or nil
+				mldsa65Seed = (node.use_mldsa65Seed == "1") and node.reality_mldsa65Seed or nil,
+				minClientVer = "1.0.0"
 			} or nil
 		end
 	end
@@ -867,14 +883,22 @@ function gen_config(var)
 	local xray_settings = uci:get_all(appname, "@global_xray[0]") or {}
 
 	if xray_settings.fragment == "1" then
-		local delay = xray_settings.fragment_delay
+		local lengths, delays = {}, {}
+		api.trim(xray_settings.fragment_lengths):gsub("[^,]+", function(w)
+		    w = w:gsub("%s+", "")
+		    if w ~= "" then lengths[#lengths+1] = w end
+		end)
+		api.trim(xray_settings.fragment_delays):gsub("[^,]+", function(w)
+		    w = w:gsub("%s+", "")
+		    if w ~= "" then delays[#delays+1] = w end
+		end)
 		fragment_table = {
 			type = "fragment",
 			settings = {
-				packets = xray_settings.fragment_packets,
-				length = xray_settings.fragment_length,
-				delay = delay and (delay:find("-", 1, true) and delay or tonumber(delay)) or nil,
-				maxSplit = xray_settings.fragment_maxSplit
+				packets = xray_settings.fragment_packets or "tlshello",
+				lengths = #lengths > 0 and lengths or {"3-5","6-8","10-20"},
+				delays = #delays > 0 and delays or {"10-20"},
+				maxSplit = xray_settings.fragment_maxSplit or "3-6"
 			}
 		}
 	end
@@ -987,33 +1011,6 @@ function gen_config(var)
 			end
 		end
 
-		local nodes_list = {}
-		function get_balancer_batch_nodes(_node)
-			if #nodes_list == 0 then
-				for k, e in ipairs(api.get_valid_nodes()) do
-					if e.node_type == "normal" and (not e.chain_proxy or e.chain_proxy == "") then
-						nodes_list[#nodes_list + 1] = {
-							id = e[".name"],
-							remarks = e["remarks"],
-							group = e["group"]
-						}
-					end
-				end
-			end
-			if not _node.node_group or _node.node_group == "" then return {} end
-			local nodes = {}
-			for g in _node.node_group:gmatch("%S+") do
-				g = api.UrlDecode(g)
-				for k, v in pairs(nodes_list) do
-					local gn = (v.group and v.group ~= "") and v.group or "default"
-					if gn:lower() == g:lower() and api.match_node_rule(v.remarks, _node.node_match_rule) then
-						nodes[#nodes + 1] = v.id
-					end
-				end
-			end
-			return nodes
-		end
-
 		function gen_loopback(outbound_tag, loopback_dst)
 			if not outbound_tag or outbound_tag == "" then return nil end
 			local inbound_tag = loopback_dst and "lo-to-" .. loopback_dst or outbound_tag .. "-lo"
@@ -1045,7 +1042,7 @@ function gen_config(var)
 			-- new balancer
 			local blc_nodes
 			if _node.node_add_mode and _node.node_add_mode == "batch" then
-				blc_nodes = get_balancer_batch_nodes(_node)
+				blc_nodes = api.get_batch_nodes(_node)
 			else
 				blc_nodes = _node.balancing_node
 			end
@@ -1069,6 +1066,10 @@ function gen_config(var)
 					if outboundTag then
 						valid_nodes[#valid_nodes + 1] = outboundTag
 					end
+				end
+				-- Check if balancing node duplicates fallback node
+				if _node.fallback_node == blc_node_id then
+					_node.fallback_node = nil
 				end
 			end
 			if #valid_nodes == 0 then return nil end
@@ -1911,6 +1912,10 @@ function gen_config(var)
 
 	if inbounds or outbounds then
 		local config = {
+			env = (function()
+				local asset_location = uci:get(appname, "@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/"
+				return { XRAY_LOCATION_ASSET = asset_location }
+			end)(),
 			log = {
 				-- error = string.format("/tmp/etc/%s/%s.log", appname, node[".name"]),
 				loglevel = loglevel
@@ -1944,6 +1949,9 @@ function gen_config(var)
 				--     statsInboundUplink = false,
 				--     statsInboundDownlink = false
 				-- }
+			},
+			version = {
+				min = xray_min_version
 			}
 		}
 

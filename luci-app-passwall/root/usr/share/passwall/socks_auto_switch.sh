@@ -125,7 +125,11 @@ test_auto_switch() {
 			done
 			# 如果没找到当前节点，或者当前节点是最后一个，就取第一个节点
 			[ -z "$new_node" ] && new_node="$first_node"
-			msg="切换到$([ "$now_node" = "$main_node" ] && echo 备用节点 || echo 下一个备用节点)检测！"
+			if [ "$new_node" = "$main_node" ]; then
+				msg="切换到主节点检测！"
+			else
+				msg="切换到$([ "$now_node" = "$main_node" ] && echo 备用节点 || echo 下一个备用节点)检测！"
+			fi
 		else
 			# 只有一个后备节点时，与主节点轮询
 			new_node=$([ "$now_node" = "$main_node" ] && echo "$b_nodes" || echo "$main_node")
@@ -134,11 +138,6 @@ test_auto_switch() {
 		echolog "Socks切换检测：端口[${socks_port}]【$(config_n_get $now_node type)：[$(config_n_get $now_node remarks)]】异常，$msg"
 		test_node ${new_node}
 		if [ $? -eq 0 ]; then
-#			[ "$restore_switch" = "0" ] && {
-#				uci set $CONFIG.${id}.node=$new_node
-#				[ -z "$(echo $b_nodes | grep $main_node)" ] && uci add_list $CONFIG.${id}.autoswitch_backup_node=$main_node
-#				uci commit $CONFIG
-#			}
 			check_process
 			echolog "Socks切换检测：端口[${socks_port}]【$(config_n_get $new_node type)：[$(config_n_get $new_node remarks)]】正常，切换到此节点！"
 			NO_REC_PROCESS=1 $APP_FILE socks_node_switch flag=${id} new_node=${new_node}
@@ -164,14 +163,19 @@ start() {
 	retry_num=$(config_n_get $id autoswitch_retry_num 1)
 	restore_switch=$(config_n_get $id autoswitch_restore_switch 0)
 	probe_url=$(config_n_get $id autoswitch_probe_url "https://www.google.com/generate_204")
-	backup_node=$(config_n_get $id autoswitch_backup_node)
+	backup_node=$(lua_api "get_socks_backup_nodes(\"${id}\")")
 	if [ -n "$backup_node" ]; then
-		backup_node=$(echo "$backup_node" | tr -s ' ' '\n' | uniq | tr -s '\n' ' ')
 		backup_node_num=$(printf "%s\n" "$backup_node" | wc -w)
+		echolog "  - Socks切换检测：端口[${socks_port}] 后备节点数量：${backup_node_num}"
 		if [ "$backup_node_num" -eq 1 ]; then
 			[ "$main_node" = "$backup_node" ] && return
+		elif [ "$backup_node_num" -gt 1 ]; then
+			[ "$restore_switch" != "1" ] && {
+				[ -z "$(echo $backup_node | grep -F "$main_node")" ] && backup_node="${backup_node} ${main_node}"
+			}
 		fi
 	else
+		echolog "  - Socks切换检测：端口[${socks_port}] 后备节点数量：0"
 		return
 	fi
 	while [ -n "$backup_node" ]; do
