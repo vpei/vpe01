@@ -24,7 +24,7 @@ endef
 $(eval $(call Download,xr819))
 
 define KernelPackage/xradio
-  SUBMENU:=Wireless Drivers Test-xr819
+  SUBMENU:=Wireless Drivers
   TITLE:=Xradio xr819 test wifi-drivers support
   DEPENDS:=@TARGET_sunxi +kmod-mac80211 +wpad-mini
   KCONFIG:= \
