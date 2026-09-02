@@ -69,13 +69,6 @@ local function convert_geofile()
 	end
 	local function convert(file_path, prefix, tags)
 		if next(tags) and fs.access(file_path) then
-			local md5_file = GEO_VAR.TO_SRS_PATH .. prefix .. ".dat.md5"
-			local new_md5 = sys.exec("md5sum " .. file_path .. " 2>/dev/null | awk '{print $1}'"):gsub("\n", "")
-			local old_md5 = sys.exec("[ -f " .. md5_file .. " ] && head -n 1 " .. md5_file .. " | tr -d ' \t\n' || echo ''")
-			if new_md5 ~= "" and new_md5 ~= old_md5 then
-				sys.call("printf '%s' " .. new_md5 .. " > " .. md5_file)
-				sys.call("rm -rf " .. GEO_VAR.TO_SRS_PATH .. prefix .. "-*.srs" )
-			end
 			for k in pairs(tags) do
 				geo_convert_srs({["geo_path"] = file_path, ["prefix"] = prefix, ["rule_name"] = k})
 			end
@@ -603,6 +596,7 @@ function gen_outbound(flag, node, tag, proxy_table)
 						realm.scheme = nil
 						realm.address = nil
 						realm.port = nil
+						realm.port_mapping = (node.hysteria2_realm_upnp == "1") and { enabled = true } or nil
 						return realm
 					end
 					return nil
@@ -661,6 +655,8 @@ function gen_outbound(flag, node, tag, proxy_table)
 end
 
 function gen_config_server(node)
+	local endpoints = {}
+	local inbounds = {}
 	local outbounds = {
 		{ type = "direct", tag = "direct" }
 	}
@@ -760,7 +756,7 @@ function gen_config_server(node)
 	local inbound = {
 		type = node.protocol,
 		tag = "inbound",
-		listen = (node.bind_local == "1") and "127.0.0.1" or "::",
+		listen = "::",
 		listen_port = tonumber(node.port),
 	}
 
@@ -776,7 +772,7 @@ function gen_config_server(node)
 					u.username = user.username
 					u.password = user.password
 				end
-				if node.protocol == "shadowsocks" or node.protocol == "trojan" then
+				if node.protocol == "shadowsocks" or node.protocol == "trojan" or node.protocol == "hysteria2" or node.protocol == "anytls" then
 					u.name = user.username
 					u.password = user.password
 				end
@@ -799,9 +795,11 @@ function gen_config_server(node)
 					u.password = user.password
 					u.uuid = user.uuid
 				end
-				if node.protocol == "hysteria2" then
-					u.name = user.username
-					u.password = user.password
+				if node.protocol == "wireguard" then
+					u.public_key = user.wireguard_public_key
+					u.pre_shared_key = user.wireguard_pre_shared_key
+					u.allowed_ips = user.allowed_ips or {}
+					u.persistent_keepalive_interval = 0
 				end
 				users[#users + 1] = u
 			end
@@ -954,6 +952,7 @@ function gen_config_server(node)
 					realm.address = nil
 					realm.port = nil
 					realm.stun_domain_resolver = "direct"
+					realm.port_mapping = (node.hysteria2_realm_upnp == "1") and { enabled = true } or nil
 					return realm
 				end
 				return nil
@@ -970,6 +969,18 @@ function gen_config_server(node)
 		end
 	end
 
+	if node.protocol == "wireguard" then
+		inbound.listen = nil
+		inbound.system = node.wireguard_system_interface == "1" and true or false
+		inbound.name = "sbwg_" .. node[".name"]
+		inbound.mtu = tonumber(node.wireguard_mtu or 1408)
+		inbound.address = node.wireguard_local_address
+		inbound.private_key = node.wireguard_private_key
+		if users then
+			inbound.peers = users
+		end
+	end
+
 	if node.protocol == "direct" then
 		protocol_table = {
 			network = (node.d_protocol ~= "TCP,UDP") and node.d_protocol or nil,
@@ -982,6 +993,13 @@ function gen_config_server(node)
 		for key, value in pairs(protocol_table) do
 			inbound[key] = value
 		end
+	end
+
+	if node.protocol == "wireguard" then
+		inbound.listen = nil
+		table.insert(endpoints, inbound)
+	else
+		table.insert(inbounds, inbound)
 	end
 
 	local route = {
@@ -1038,7 +1056,8 @@ function gen_config_server(node)
 				tag = "direct"
 			}}
 		},
-		inbounds = { inbound },
+		endpoints = endpoints,
+		inbounds = inbounds,
 		outbounds = outbounds,
 		route = route
 	}
@@ -1063,8 +1082,7 @@ function gen_config(var)
 	local server_host = var["server_host"]
 	local server_port = var["server_port"]
 	local tcp_proxy_way = var["tcp_proxy_way"]
-	local tcp_redir_port = var["tcp_redir_port"]
-	local udp_redir_port = var["udp_redir_port"]
+	local redir_port = var["redir_port"]
 	local local_socks_address = var["local_socks_address"] or "0.0.0.0"
 	local local_socks_port = var["local_socks_port"]
 	local local_socks_username = var["local_socks_username"]
@@ -1087,6 +1105,7 @@ function gen_config(var)
 	local remote_dns_client_ip = var["remote_dns_client_ip"]
 	local remote_dns_query_strategy = var["remote_dns_query_strategy"]
 	local remote_dns_fake = var["remote_dns_fake"]
+	local remote_rewrite_ttl = var["remote_rewrite_ttl"] or "30"
 	local dns_cache = var["dns_cache"]
 	local dns_socks_address = var["dns_socks_address"]
 	local dns_socks_port = var["dns_socks_port"]
@@ -1212,52 +1231,50 @@ function gen_config(var)
 			table.insert(inbounds, inbound)
 		end
 
-		if tcp_redir_port then
-			local inbound
+		if redir_port then
+			local inbound_tproxy = {
+				type = "tproxy",
+				tag = "tproxy",
+				listen = "::",
+				listen_port = tonumber(redir_port),
+			}
 			if tcp_proxy_way ~= "tproxy" then
-				inbound = {
+				local inbound = {
 					type = "redirect",
 					tag = "redirect_tcp",
 					listen = "::",
-					listen_port = tonumber(tcp_redir_port)
+					listen_port = tonumber(redir_port),
 				}
-			else
-				inbound = {
-					type = "tproxy",
-					tag = "tproxy_tcp",
-					network = "tcp",
-					listen = "::",
-					listen_port = tonumber(tcp_redir_port)
-				}
-			end
-			table.insert(inbounds, inbound)
-			table.insert(route.rules, {
-				action = "sniff",
-				inbound = inbound.tag
-			})
-		end
+				table.insert(inbounds, inbound)
+				table.insert(route.rules, {
+					action = "sniff",
+					inbound = inbound.tag
+				})
 
-		if udp_redir_port then
-			local inbound = {
-				type = "tproxy",
-				tag = "tproxy_udp",
-				network = "udp",
-				listen = "::",
-				listen_port = tonumber(udp_redir_port)
-			}
-			table.insert(inbounds, inbound)
+				inbound_tproxy.tag = "tproxy_udp"
+				inbound_tproxy.network = "udp"
+			end
+
+			table.insert(inbounds, inbound_tproxy)
 			table.insert(route.rules, {
 				action = "sniff",
-				inbound = inbound.tag
+				inbound = inbound_tproxy.tag
 			})
 		end
 
 		function get_node_by_id(node_id)
-			if not node_id or node_id == "" or node_id == "nil" then return nil end
-			local section = api.uci_get_c(node_id) or {}
+			local section
+			if type(node_id) == "table" then
+				section = node_id
+			elseif type(node_id) == "string" then
+				if node_id == "" or node_id == "nil" then return nil end
+				section = api.uci_get_c(node_id) or {}
+			else
+				return nil
+			end
 			if section[".type"] == "socks" then
-				local result = {
-					[".name"] = node_id,
+				return {
+					[".name"] = section[".name"],
 					remarks = "socks[%s]" % section.port,
 					type = "sing-box",
 					protocol = "socks",
@@ -1265,7 +1282,6 @@ function gen_config(var)
 					port = section.port,
 					uot = "1"
 				}
-				return result
 			end
 			if section[".type"] == "nodes" then
 				return section
@@ -1290,7 +1306,7 @@ function gen_config(var)
 				ut_nodes = _node.urltest_node
 			end
 
-			api.log("  - 加载 Sing-Box URLTest 节点【" .. (_node.remarks or "") .. "】，子节点数量：" .. #(ut_nodes or {}))
+			-- api.log("  - 加载 Sing-Box URLTest 节点【" .. (_node.remarks or "") .. "】，子节点数量：" .. #(ut_nodes or {}))
 
 			local valid_nodes = {}
 			for i = 1, #(ut_nodes or {}) do
@@ -1432,12 +1448,7 @@ function gen_config(var)
 
 		function gen_outbound_get_tag(flag, node_id, tag, proxy_table)
 			if not node_id or node_id == "nil" then return nil end
-			local node
-			if type(node_id) == "string" then
-				node = get_node_by_id(node_id)
-			elseif type(node_id) == "table" then
-				node = node_id
-			end
+			local node = get_node_by_id(node_id)
 			if not tag then tag = node[".name"] end
 			if node then
 				if proxy_table.chain_proxy == "1" or proxy_table.chain_proxy == "2" then
@@ -1595,15 +1606,13 @@ function gen_config(var)
 					if e["inbound"] and e["inbound"] ~= "" then
 						inboundTag = {}
 						if e["inbound"]:find("tproxy") then
-							if tcp_redir_port then
+							if redir_port then
 								if tcp_proxy_way == "tproxy" then
-									table.insert(inboundTag, "tproxy_tcp")
+									table.insert(inboundTag, "tproxy")
 								else
 									table.insert(inboundTag, "redirect_tcp")
+									table.insert(inboundTag, "tproxy_udp")
 								end
-							end
-							if udp_redir_port then
-								table.insert(inboundTag, "tproxy_udp")
 							end
 						end
 						if e["inbound"]:find("socks") then
@@ -1801,18 +1810,7 @@ function gen_config(var)
 		end
 	end
 
-	table.insert(route.rules, {
-		action = "route",
-		ip_is_private = true,
-		outbound = "direct"
-	})
-
 	if COMMON.default_outbound_tag then
-		table.insert(route.rules, {
-			action = "route",
-			port_range = { "0:65535" },
-			outbound = COMMON.default_outbound_tag
-		})
 		route.final = COMMON.default_outbound_tag
 	end
 
@@ -1962,7 +1960,7 @@ function gen_config(var)
 		local default_dns_flag = "remote"
 		if dns_socks_address and dns_socks_port then
 		else
-			if node_id and (tcp_redir_port or udp_redir_port) then
+			if node_id and redir_port then
 				local node = get_node_by_id(node_id)
 				if node.protocol == "_shunt" then
 					if node.default_node == "_direct" then
@@ -2015,7 +2013,7 @@ function gen_config(var)
 					end
 					if value.outboundTag ~= "block" and value.outboundTag ~= "direct" then
 						dns_rule.server = "remote"
-						dns_rule.rewrite_ttl = 30
+						dns_rule.rewrite_ttl = tonumber(remote_rewrite_ttl)
 						if true then
 							local block_rule
 							if remote_strategy == "ipv4_only" then
@@ -2054,7 +2052,9 @@ function gen_config(var)
 								fakedns_dns_rule.query_type = { "A", "AAAA" }
 							end
 							fakedns_dns_rule.server = fakedns_tag
+							fakedns_dns_rule.rewrite_ttl = 1
 							fakedns_dns_rule.disable_cache = true
+							fakedns_dns_rule.client_subnet = nil
 							table.insert(dns.rules, fakedns_dns_rule)
 						end
 					end
@@ -2063,11 +2063,25 @@ function gen_config(var)
 			end
 		end
 		if default_dns_flag == "remote" then
+			local block_rule
 			local dns_rule_query_type = { "A", "AAAA" }
 			if remote_strategy == "ipv4_only" then
+				block_rule = {
+					query_type = { "AAAA" },
+					action = "predefined",
+					rcode = "NOERROR"
+				}
 				dns_rule_query_type = { "A" }
 			elseif remote_strategy == "ipv6_only" then
+				block_rule = {
+					query_type = { "A" },
+					action = "predefined",
+					rcode = "NOERROR"
+				}
 				dns_rule_query_type = { "AAAA" }
+			end
+			if block_rule then
+				table.insert(dns.rules, block_rule)
 			end
 			if remote_dns_fake then
 				-- When default is not direct and enable fakedns, default DNS use FakeDNS.
@@ -2075,17 +2089,16 @@ function gen_config(var)
 					query_type = dns_rule_query_type,
 					server = fakedns_tag,
 					disable_cache = true,
-					rewrite_ttl = 30
+					rewrite_ttl = 1
 				}
 				table.insert(dns.rules, fakedns_dns_rule)
-			else
-				local remote_dns_rule = {
-					query_type = dns_rule_query_type,
-					server = "remote",
-					disable_cache = true,
-				}
-				table.insert(dns.rules, remote_dns_rule)
 			end
+			local remote_dns_rule = {
+				server = "remote",
+				disable_cache = true,
+				rewrite_ttl = tonumber(remote_rewrite_ttl)
+			}
+			table.insert(dns.rules, remote_dns_rule)
 		end
 		local dns_in_inbound = {
 			type = "direct",

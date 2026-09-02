@@ -17,7 +17,7 @@ m:foreach("user", function(s)
 	user_list[#user_list + 1] = s
 end)
 
-s = m:section(NamedSection, arg[1], "server", translate("Server Config"))
+local s = m:section(NamedSection, arg[1], "server", translate("Server Config"))
 s.addremove = false
 s.dynamic = false
 
@@ -39,7 +39,7 @@ for filename in api.fs.dir(types_dir) do
 	table.insert(type_table, filename)
 end
 table.sort(type_table, function(a, b)
-    return a < b
+	return a < b
 end)
 
 for index, value in ipairs(type_table) do

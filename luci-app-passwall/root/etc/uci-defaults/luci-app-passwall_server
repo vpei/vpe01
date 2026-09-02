@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if [ -e "/etc/config/ucitrack" ]; then
-    uci -q batch <<-EOF
+	uci -q batch <<-EOF
 		delete ucitrack.@passwall_server[-1]
 		add ucitrack passwall_server
 		set ucitrack.@passwall_server[-1].init=passwall_server
@@ -9,20 +9,18 @@ if [ -e "/etc/config/ucitrack" ]; then
 EOF
 fi
 
-uci -q batch <<-EOF
-	delete firewall.passwall_server
-	set firewall.passwall_server=include
-	set firewall.passwall_server.type='script'
-	set firewall.passwall_server.path='/var/etc/passwall_server.include'
-EOF
+# Migrate server sections from the old `user` section type. New user entries
+# also use `user`, so only sections with a server `type` option are renamed.
+for sid in $(uci -q show passwall_server | sed -n 's/^passwall_server\.\([^.=]*\)=user$/\1/p'); do
+	if [ -n "$(uci -q get "passwall_server.${sid}.type")" ]; then
+		uci -q set "passwall_server.${sid}=server"
+	fi
+done
+for sid in $(uci -q show passwall_server | sed -n 's/^passwall_server\.\([^.=]*\)\.protocol=dokodemo-door$/\1/p'); do
+	uci -q set "passwall_server.${sid}.protocol=tunnel"
+done
 
-if [ -x "/sbin/fw3" ]; then
-	uci -q set firewall.passwall_server.reload='1'
-else
-	uci -q delete firewall.passwall_server.reload
-	uci -q delete firewall.passwall_server.fw4_compatible
-fi
-uci commit firewall
+uci -q commit passwall_server
 
 rm -f /tmp/luci-indexcache /tmp/luci-indexcache.*
 rm -rf /tmp/luci-modulecache/

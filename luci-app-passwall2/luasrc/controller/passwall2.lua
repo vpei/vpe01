@@ -36,7 +36,7 @@ function index()
 	entry({"admin", "services", appname, "settings"}, cbi(appname .. "/client/global"), _("Basic Settings"), 1).dependent = true
 	entry({"admin", "services", appname, "node_list"}, cbi(appname .. "/client/node_list"), _("Node List"), 2).dependent = true
 	entry({"admin", "services", appname, "node_subscribe"}, cbi(appname .. "/client/node_subscribe"), _("Node Subscribe"), 3).dependent = true
-	entry({"admin", "services", appname, "other"}, cbi(appname .. "/client/other", {autoapply = true}), _("Other Settings"), 92).leaf = true
+	entry({"admin", "services", appname, "other"}, cbi(appname .. "/client/other"), _("Other Settings"), 92).leaf = true
 	if nixio.fs.access("/usr/sbin/haproxy") then
 		entry({"admin", "services", appname, "haproxy"}, cbi(appname .. "/client/haproxy"), _("Load Balancing"), 93).leaf = true
 	end
@@ -71,7 +71,6 @@ function index()
 	entry({"admin", "services", appname, "get_now_use_node"}, call("get_now_use_node")).leaf = true
 	entry({"admin", "services", appname, "get_redir_log"}, call("get_redir_log")).leaf = true
 	entry({"admin", "services", appname, "get_socks_log"}, call("get_socks_log")).leaf = true
-	entry({"admin", "services", appname, "get_acl_log"}, call("get_acl_log")).leaf = true
 	entry({"admin", "services", appname, "get_log"}, call("get_log")).leaf = true
 	entry({"admin", "services", appname, "clear_log"}, call("clear_log")).leaf = true
 	entry({"admin", "services", appname, "index_status"}, call("index_status")).leaf = true
@@ -248,10 +247,9 @@ end
 
 function get_redir_log()
 	local id = http.formvalue("id")
-	local name = http.formvalue("name")
-	local file_path = "/tmp/etc/passwall2/acl/" .. id .. "/" .. name .. ".log"
+	local file_path = api.TMP_PATH .. "/acl/" .. id .. ".log"
 	if nixio.fs.access(file_path) then
-		local content = luci.sys.exec("tail -n 19999 '" .. file_path .. "'")
+		local content = luci.sys.exec("tail -n 5000 '" .. file_path .. "'")
 		content = content:gsub("\n", "<br />")
 		http.write(content)
 	else
@@ -261,21 +259,9 @@ end
 
 function get_socks_log()
 	local name = http.formvalue("name")
-	local path = "/tmp/etc/passwall2/" .. name .. ".log"
+	local path = api.TMP_PATH .. "/" .. name .. ".log"
 	if nixio.fs.access(path) then
 		local content = luci.sys.exec("tail -n 5000 ".. path)
-		content = content:gsub("\n", "<br />")
-		http.write(content)
-	else
-		http.write(string.format("<script>alert('%s');window.close();</script>", i18n.translate("Not enabled log")))
-	end
-end
-
-function get_acl_log()
-	local id = http.formvalue("id")
-	local path = api.TMP_PATH .. "/acl/" .. id .. "/node.log"
-	if nixio.fs.access(path) then
-		local content = luci.sys.exec("tail -n 5000 '" .. path .. "'")
 		content = content:gsub("\n", "<br />")
 		http.write(content)
 	else
@@ -294,7 +280,7 @@ end
 
 function index_status()
 	local e = {}
-	e["global_status"] = luci.sys.call("/bin/busybox top -bn1 | grep -v 'grep' | grep '/tmp/etc/passwall2/bin/' | grep 'default' | grep 'global' >/dev/null") == 0
+	e["global_status"] = luci.sys.call("/bin/busybox top -bn1 | grep -v 'grep' | grep '%s/bin/' | grep '/acl/default' >/dev/null" % api.TMP_PATH) == 0
 	http_write_json(e)
 end
 
@@ -467,14 +453,13 @@ end
 function delete_select_nodes()
 	local ids = http.formvalue("ids")
 	local redirect = http.formvalue("redirect")
+	local ids_t = {}
 	string.gsub(ids, '[^' .. "," .. ']+', function(w)
+		ids_t[#ids_t + 1] = w
 		if (uci_get("@global[0]", "node") or "") == w then
 			uci_del('@global[0]', "node")
 		end
 		uci_foreach("socks", function(t)
-			if t["node"] == w then
-				uci_del(t[".name"])
-			end
 			local changed = false
 			local auto_switch_node_list = uci_get(t[".name"], "autoswitch_backup_node") or {}
 			for i = #auto_switch_node_list, 1, -1 do
@@ -485,6 +470,14 @@ function delete_select_nodes()
 			end
 			if changed then
 				uci_set(t[".name"], "autoswitch_backup_node", auto_switch_node_list)
+			end
+			if t["node"] == w then
+				local new_node = api.get_random_normal_node(ids_t)
+				if new_node then
+					uci_set(t[".name"], "node", new_node[".name"])
+				else
+					uci_set(t[".name"], "enabled", "0")
+				end
 			end
 		end)
 		uci_foreach("haproxy_config", function(t)
@@ -636,6 +629,8 @@ function rollback_rules()
 	local geo_dir = (uci_get("@global_rules[0]", "v2ray_location_asset") or "/usr/share/v2ray/")
 	fs.move(bak_dir .. arg_type .. ".dat", geo_dir .. arg_type .. ".dat")
 	fs.rmdir(bak_dir)
+	uci_set("@global[0]", "flush_set", "1")
+	uci_save(true)
 	http_write_json_ok()
 end
 
@@ -665,8 +660,9 @@ end
 
 function server_log()
 	local id = http.formvalue("id")
-	if nixio.fs.access("/tmp/etc/passwall2_server/" .. id .. ".log") then
-		local content = luci.sys.exec("cat /tmp/etc/passwall2_server/" .. id .. ".log")
+	local f_file = api.S_TMP_PATH .. "/" .. id .. ".log"
+	if nixio.fs.access(f_file) then
+		local content = luci.sys.exec("cat " .. f_file)
 		content = content:gsub("\n", "<br />")
 		http.write(content)
 	else

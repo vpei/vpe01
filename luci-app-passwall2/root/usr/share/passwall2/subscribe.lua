@@ -29,7 +29,6 @@ local has_ss_rust = api.is_finded("sslocal")
 local has_ssr = api.is_finded("ssr-local") and api.is_finded("ssr-redir")
 local has_singbox = api.finded_com("sing-box")
 local has_xray = api.finded_com("xray")
-local has_hysteria2 = api.finded_com("hysteria")
 local DEFAULT_ALLOWINSECURE = true
 local DEFAULT_FILTER_KEYWORD_MODE = uci_get("@global_subscribe[0]", "filter_keyword_mode") or "0"
 local DEFAULT_FILTER_KEYWORD_DISCARD_LIST = uci_get("@global_subscribe[0]", "filter_discard_list") or {}
@@ -39,12 +38,11 @@ local DEFAULT_SS_TYPE = api.get_core("ss_type", {{has_ss_rust,"shadowsocks-rust"
 local DEFAULT_TROJAN_TYPE = api.get_core("trojan_type", {{has_singbox,"sing-box"},{has_xray,"xray"}})
 local DEFAULT_VMESS_TYPE = api.get_core("vmess_type", {{has_xray,"xray"},{has_singbox,"sing-box"}})
 local DEFAULT_VLESS_TYPE = api.get_core("vless_type", {{has_xray,"xray"},{has_singbox,"sing-box"}})
-local DEFAULT_HYSTERIA2_TYPE = api.get_core("hysteria2_type", {{has_hysteria2,"hysteria2"},{has_singbox,"sing-box"},{has_xray,"xray"}})
+local DEFAULT_HYSTERIA2_TYPE = api.get_core("hysteria2_type", {{has_singbox,"sing-box"},{has_xray,"xray"}})
 local core_has = {
 	["xray"] = has_xray,
 	["sing-box"] = has_singbox,
 	["shadowsocks-rust"] = has_ss_rust,
-	["hysteria2"] = has_hysteria2
 }
 -- Determine whether to filter node keywords
 local function is_filter_keyword(sub_cfg, value)
@@ -535,6 +533,7 @@ local function parseClashNode(node, add_mode, group, sub_cfg)
 		result = set_ss_implementation(sub_ss_type, result)
 		if not result then return nil end
 		result.method = node.cipher
+		result.ss_method = node.cipher
 		result.password = node.password
 		if node.plugin == "obfs" then
 			result.plugin = "obfs-local"
@@ -1114,6 +1113,7 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 				(_method == "xchacha20-poly1305" and "xchacha20-ietf-poly1305") or _method
 
 			result.method = method
+			result.ss_method = method
 			result.password = password
 			result.tcp_fast_open = params.tfo
 			result.use_finalmask = (params.fm and params.fm ~= "") and "1" or nil
@@ -1482,6 +1482,7 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 		result.port = content.port
 		result.password = content.password
 		result.method = content.encryption
+		result.ss_method = content.encryption
 		result.plugin = content.plugin
 		result.plugin_opts = content.plugin_options
 		result.group = content.airport
@@ -1768,8 +1769,6 @@ local function processData(szType, content, add_mode, group, sub_cfg)
 			result.protocol = "hysteria2"
 			result.use_finalmask = (params.fm and params.fm ~= "") and "1" or nil
 			result.finalmask = (params.fm and params.fm ~= "") and api.base64Encode(params.fm) or nil
-		elseif has_hysteria2 then
-			result.type = "Hysteria2"
 		else
 			log(2, i18n.translatef("Skipping the %s node is due to incompatibility with the %s core program or incorrect node usage type settings.", "Hysteria2", "Hysteria2"))
 			return nil
@@ -2001,7 +2000,7 @@ local function curl(url, file, ua, mode, hwid)
 end
 
 function get_headers()
-	local cache_file = CACHE_PATH .. "/sub_curl_headers"
+	local cache_file = api.CACHE_PATH .. "/sub_curl_headers"
 	if fs.access(cache_file) then
 		return luci.sys.exec("cat " .. cache_file)
 	end

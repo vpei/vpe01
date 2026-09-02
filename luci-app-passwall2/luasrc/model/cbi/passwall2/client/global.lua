@@ -164,6 +164,22 @@ node_socks_bind_local:depends({ node = "", ["!reverse"] = true })
 
 s:tab("DNS", translate("DNS"))
 
+o = s:taboption("DNS", ListValue, "direct_dns_protocol", translate("Direct DNS Protocol"))
+o:value("", translate("Auto"))
+--o:value("tcp", "TCP")
+o:value("udp", "UDP")
+
+o = s:taboption("DNS", Value, "direct_dns", translate("Direct DNS"))
+o.datatype = "or(ipaddr,ipaddrport(1))"
+o.default = "223.5.5.5"
+o:value("223.5.5.5")
+o:value("223.6.6.6")
+o:value("114.114.114.114")
+o:value("119.29.29.29")
+o:value("180.76.76.76")
+o:depends("direct_dns_protocol", "tcp")
+o:depends("direct_dns_protocol", "udp")
+
 o = s:taboption("DNS", ListValue, "direct_dns_query_strategy", translate("Direct Query Strategy"))
 o.default = "UseIP"
 o:value("UseIP")
@@ -182,7 +198,7 @@ end
 
 ---- DNS over TCP or UDP or TLS (DoT) or QUIC (DoQ)
 o = s:taboption("DNS", Value, "remote_dns", translate("Remote DNS"))
-o.datatype = "or(ipaddr,ipaddrport)"
+o.datatype = "or(ipaddr,ipaddrport(1))"
 o.default = "1.1.1.1"
 o:value("1.1.1.1", "1.1.1.1 (CloudFlare)")
 o:value("1.1.1.2", "1.1.1.2 (CloudFlare-Security)")
@@ -282,8 +298,8 @@ loglevel:value("error")
 o = s:taboption("log", DummyValue, "_log", translate("Log File"))
 o.rawhtml = true
 o.cfgvalue = function(t, n)
-	local log_path = api.TMP_PATH .. "/acl/default/global.log"
-	local log_url = api.url("get_redir_log") .. "?id=default&name=global"
+	local log_path = api.TMP_PATH .. "/acl/default.log"
+	local log_url = api.url("get_redir_log") .. "?id=default"
 	return string.format(
 		'<code>%s</code>&nbsp;&nbsp;<input class="btn cbi-button cbi-button-apply" type="button" value="%s" onclick="window.open(\'%s\', \'_blank\')" />',
 		log_path,
@@ -308,6 +324,7 @@ o.rmempty = false
 
 s2 = m:section(TypedSection, "socks", translate("Socks Config"))
 s2.template = "cbi/tblsection"
+s2.sortable = true
 s2.anonymous = true
 s2.addremove = true
 s2.extedit = api.url("socks_config", "%s")
@@ -382,5 +399,7 @@ for k, v in pairs(nodes_table) do
 end
 
 m:appendTemplate("/global/footer", {shunt_list = api.jsonc.stringify(shunt_list)})
+
+m:appendTemplate("/cbi/sortable", {sectiontype = s2.sectiontype})
 
 return api.return_map(m)

@@ -2,6 +2,7 @@ local api = require "luci.passwall.api"
 api.set_default_cbi()
 
 m = Map()
+m.redirect = api.url()
 
 if not arg[1] or not m:get(arg[1]) then
 	luci.http.redirect(m.redirect)
@@ -62,7 +63,7 @@ end)
 
 o = s:option(Value, "port", "Socks " .. translate("Listen Port"))
 o.default = n + 1080
-o.datatype = "port"
+o.datatype = "range(1,65535)"
 o.rmempty = false
 
 if has_singbox or has_xray then
@@ -74,6 +75,20 @@ end
 o = s:option(Flag, "log", translate("Enable") .. " " .. translate("Log"))
 o.default = 1
 o.rmempty = false
+
+o = s:option(DummyValue, "_log", translate("Log File"))
+o.rawhtml = true
+o.cfgvalue = function(t, n)
+	local log_path = api.TMP_PATH .. "/" .. arg[1] .. ".log"
+	local log_url = api.url("get_socks_log") .. "?name=" .. arg[1]
+	return string.format(
+		'<code>%s</code>&nbsp;&nbsp;<input class="btn cbi-button cbi-button-apply" type="button" value="%s" onclick="window.open(\'%s\', \'_blank\')" />',
+		log_path,
+		translate("View Log"),
+		log_url
+	)
+end
+o:depends("log", true)
 
 o = s:option(Flag, "enable_autoswitch", translate("Auto Switch"))
 o.default = 0

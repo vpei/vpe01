@@ -594,6 +594,7 @@ local current_node = map:get(section)
 			params += opt.query("pinSHA256", dom_prefix + "tls_pinSHA256");
 			params += opt.query("pcs", dom_prefix + "tls_pinSHA256");
 			params += opt.query("vcn", dom_prefix + "tls_CertByName");
+			params += opt.query("ech", dom_prefix + "ech_config");
 			
 			var v_password = null;
 			
@@ -628,7 +629,7 @@ local current_node = map:get(section)
 			params = params.replace(/^&/, "");
 			url =
 				_address + ":" +
-				v_port.value + "?" +
+				(v_port.value || "443") + "?" +
 				params +
 				"#" + encodeURI(v_alias.value);
 			if (v_password) {
@@ -1639,6 +1640,7 @@ local current_node = map:get(section)
 				opt.set(dom_prefix + 'hysteria2_hop', queryParam.mport || "");
 				opt.set(dom_prefix + 'use_finalmask', !!queryParam.fm);
 				opt.set(dom_prefix + 'finalmask', queryParam.fm || "");
+				if (is_singbox && (queryParam.pcs || queryParam.pinSHA256)) queryParam.allowinsecure = '1';
 			} else if (has_hysteria2) {
 				opt.set('type', "Hysteria2");
 				dom_prefix = "hysteria2_"
@@ -1652,18 +1654,19 @@ local current_node = map:get(section)
 					opt.set(dom_prefix + 'obfs_MaxPacketSize', queryParam.maxPacketSize || "1200");
 				}
 				opt.set(dom_prefix + 'hop', queryParam.mport || "");
+				if (queryParam.pcs || queryParam.pinSHA256) queryParam.allowinsecure = '0';
 			}
-			
 			opt.set(dom_prefix + 'address', unbracketIP(m.hostname));
 			opt.set(dom_prefix + 'port', m.port || "443");
-			
 			opt.set(dom_prefix + 'tls_serverName', queryParam.sni || "");
 			opt.set(
 				dom_prefix + 'tls_allowInsecure',
-				!((queryParam.allowinsecure ?? '0') === '0' && (queryParam.allowInsecure ?? '0') === '0' && (queryParam.insecure ?? '0') === '0')
+				(queryParam.allowinsecure ?? queryParam.allowInsecure ?? queryParam.insecure ?? '0') === '1'
 			);
 			opt.set(dom_prefix + 'tls_pinSHA256', queryParam.pcs || queryParam.pinSHA256 || '');
 			opt.set(dom_prefix + 'tls_CertByName', queryParam.vcn || '');
+			opt.set(dom_prefix + 'ech', !!queryParam.ech);
+			opt.set(dom_prefix + 'ech_config', queryParam.ech || '');
 			if (m.hash) {
 				opt.set('remarks', decodeURIComponent(m.hash.substr(1)));
 			}
