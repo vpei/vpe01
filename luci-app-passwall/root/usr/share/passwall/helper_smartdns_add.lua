@@ -23,6 +23,7 @@ local NFTFLAG = var["-NFTFLAG"]
 local SUBNET = var["-SUBNET"]
 local LISTEN_PORT = var["-LISTEN_PORT"]
 local LOCAL_PORT = var["-LOCAL_PORT"]
+local DNS_REDIRECT = var["-DNS_REDIRECT"] == "1"
 
 local sys = api.sys
 local fs = api.fs
@@ -177,22 +178,52 @@ end
 
 if not REMOTE_GROUP or REMOTE_GROUP == "nil" then
 	REMOTE_GROUP = "passwall_proxy"
-	if REMOTE_DNS then
-		REMOTE_DNS = REMOTE_DNS:gsub("#", ":")
-	end
-	sys.call('sed -i "/passwall/d" /etc/smartdns/custom.conf >/dev/null 2>&1')
 end
+if REMOTE_DNS then
+	REMOTE_DNS = REMOTE_DNS:gsub("#", ":")
+end
+sys.call('sed -i "/passwall/d" /etc/smartdns/custom.conf >/dev/null 2>&1')
 
+local SANDBOX_GROUP = "passwall_" .. FLAG
 local force_https_soa = api.uci_get_c("@global[0]", "force_https_soa") or 0
 local proxy_server_name = "psw-proxy-server"
+local listen_address = "[::]:" .. LISTEN_PORT .. (DNS_REDIRECT and "" or "@lo")
+local local_domain = DNS_REDIRECT and api.uci_get("dhcp", "@dnsmasq[0]", "domain")
 config_lines = {
-	tonumber(LISTEN_PORT) ~= 0 and "bind [::]:" .. LISTEN_PORT .. "@lo" or "",
+	tonumber(LISTEN_PORT) ~= 0 and ("bind " .. listen_address .. " -group " .. SANDBOX_GROUP) or "",
+	tonumber(LISTEN_PORT) ~= 0 and ("bind-tcp " .. listen_address .. " -group " .. SANDBOX_GROUP) or "",
 	(tonumber(LOCAL_PORT) ~= 0 and LOCAL_GROUP) and "bind [::]:" .. LOCAL_PORT .. "@lo -group " ..  LOCAL_GROUP or "",
+	(tonumber(LOCAL_PORT) ~= 0 and LOCAL_GROUP) and "bind-tcp [::]:" .. LOCAL_PORT .. "@lo -group " .. LOCAL_GROUP or "",
 	tonumber(force_https_soa) == 1 and "force-qtype-SOA 65" or "force-qtype-SOA -,65",
 	"server 223.5.5.5 -bootstrap-dns",
+	-- Set the suffix before loading hosts/leases so initial records are expanded too.
+	(local_domain and local_domain ~= "") and "local-domain " .. local_domain or "",
+	DNS_REDIRECT and "hosts-file /tmp/hosts/*" or "",
 	is_file_nonzero("/etc/hosts") and "hosts-file /etc/hosts" or "",
 	DNS_MODE == "socks" and string.format("proxy-server socks5://%s -name %s", REMOTE_PROXY_SERVER, proxy_server_name) or ""
 }
+if DNS_REDIRECT then
+	local hosts = {}
+	api.uci:foreach("dhcp", "host", function(s)
+		if datatypes.hostname(s.name or "") and datatypes.ip4addr(s.ip or "") then
+			hosts[#hosts + 1] = s.ip .. " " .. s.name
+		end
+	end)
+
+	local hosts_file = FLAG_PATH .. "/dhcp-static-hosts"
+	if fs.writefile(hosts_file, table.concat(hosts, "\n") .. "\n") and #hosts > 0 then
+		table.insert(config_lines, string.format("hosts-file %q", hosts_file))
+	end
+
+	-- SmartDNS monitors the lease file and updates local records without a restart.
+	local lease_file = api.uci_get("dhcp", "@dnsmasq[0]", "leasefile")
+	if not lease_file or lease_file == "" then lease_file = "/tmp/dhcp.leases" end
+	table.insert(config_lines, string.format("dnsmasq-lease-file %q", lease_file))
+	local odhcpd_lease = api.uci_get("dhcp", "odhcpd", "leasefile")
+	if odhcpd_lease and odhcpd_lease ~= "" then
+		table.insert(config_lines, string.format("odhcpd-lease-file %q", odhcpd_lease))
+	end
+end
 if DNS_MODE == "socks" then
 	for w in string.gmatch(REMOTE_DNS, '[^|]+') do
 		local server_dns = api.trim(w)
@@ -255,6 +286,9 @@ else
 	log("  - " .. DNS_MODE:gsub("^%l",string.upper) .. " " .. TUN_DNS .. " -> " .. REMOTE_GROUP)
 end
 
+-- Isolate PassWall domain rules within dedicated group to avoid polluting SmartDNS default group
+table.insert(config_lines, "group-begin " .. SANDBOX_GROUP)
+
 --设置默认 DNS 分组(托底组)
 local DEFAULT_DNS_GROUP = (USE_DEFAULT_DNS == "direct" and LOCAL_GROUP) or
                           (USE_DEFAULT_DNS == "remote" and REMOTE_GROUP)
@@ -284,8 +318,9 @@ end
 --屏蔽列表
 local file_block_host = CACHE_RULES_PATH .. "/block_host"
 if not fs.access(file_block_host .. "_ok") then
-	api.remove(file_block_host)
+	api.remove(file_block_host .. "*")
 end
+local block_geosite_flag = fs.access(file_block_host) and fs.access(file_block_host .. "_ok") and fs.access(file_block_host .. "_geo")
 if USE_BLOCK_LIST == "1" and not fs.access(file_block_host) then
 	local block_domain, lookup_block_domain = {}, {}
 	local geosite_arg = ""
@@ -316,6 +351,7 @@ if USE_BLOCK_LIST == "1" and not fs.access(file_block_host) then
 		local code, out = get_geosite(geosite_arg, file_block_host)
 		if code == 0 then
 			log("  - 解析[屏蔽列表] Geosite 到屏蔽域名表(blocklist)完成")
+			sys.call("touch " .. file_block_host .. "_geo")
 		else
 			log("  - 解析[屏蔽列表] Geosite 到屏蔽域名表(blocklist)失败！[" .. out .. "]")
 			success = false
@@ -326,6 +362,9 @@ if USE_BLOCK_LIST == "1" and not fs.access(file_block_host) then
 	end
 end
 if USE_BLOCK_LIST == "1" and is_file_nonzero(file_block_host) then
+	if block_geosite_flag then
+		log("  - [屏蔽列表] Geosite 使用缓存结果，跳过重复解析")
+	end
 	local domain_set_name = "psw-block"
 	tmp_lines = {
 		string.format("domain-set -name %s -file %s", domain_set_name, file_block_host),
@@ -355,12 +394,6 @@ if not is_file_nonzero(file_vpslist) then
 			process_address(dns)
 		end
 	end)
-	api.uci_foreach_c("subscribe_list", function(t)  --订阅链接
-		local url, _ = api.get_domain_port_from_url(t.url or "")
-		if url and url ~= "" then
-			process_address(url)
-		end
-	end)
 	f_out:close()
 end
 if is_file_nonzero(file_vpslist) then
@@ -383,8 +416,9 @@ end
 --直连（白名单）列表
 local file_direct_host = CACHE_RULES_PATH .. "/direct_host"
 if not fs.access(file_direct_host .. "_ok") then
-	api.remove(file_direct_host)
+	api.remove(file_direct_host .. "*")
 end
+local direct_geosite_flag = fs.access(file_direct_host) and fs.access(file_direct_host .. "_ok") and fs.access(file_direct_host .. "_geo")
 if USE_DIRECT_LIST == "1" and not fs.access(file_direct_host) then
 	local direct_domain, lookup_direct_domain = {}, {}
 	local geosite_arg = ""
@@ -415,6 +449,7 @@ if USE_DIRECT_LIST == "1" and not fs.access(file_direct_host) then
 		local code, out = get_geosite(geosite_arg, file_direct_host)
 		if code == 0 then
 			log("  - 解析[直连列表] Geosite 到域名白名单(whitelist)完成")
+			sys.call("touch " .. file_direct_host .. "_geo")
 		else
 			log("  - 解析[直连列表] Geosite 到域名白名单(whitelist)失败！[" .. out .. "]")
 			success = false
@@ -425,6 +460,9 @@ if USE_DIRECT_LIST == "1" and not fs.access(file_direct_host) then
 	end
 end
 if USE_DIRECT_LIST == "1" and is_file_nonzero(file_direct_host) then
+	if direct_geosite_flag then
+		log("  - [直连列表] Geosite 使用缓存结果，跳过重复解析")
+	end
 	local domain_set_name = "psw-directlist"
 	tmp_lines = {
 		string.format("domain-set -name %s -file %s", domain_set_name, file_direct_host)
@@ -444,8 +482,9 @@ end
 --代理（黑名单）列表
 local file_proxy_host = CACHE_RULES_PATH .. "/proxy_host"
 if not fs.access(file_proxy_host .. "_ok") then
-	api.remove(file_proxy_host)
+	api.remove(file_proxy_host .. "*")
 end
+local proxy_geosite_flag = fs.access(file_proxy_host) and fs.access(file_proxy_host .. "_ok") and fs.access(file_proxy_host .. "_geo")
 if USE_PROXY_LIST == "1" and not fs.access(file_proxy_host) then
 	local proxy_domain, lookup_proxy_domain = {}, {}
 	local geosite_arg = ""
@@ -476,6 +515,7 @@ if USE_PROXY_LIST == "1" and not fs.access(file_proxy_host) then
 		local code, out = get_geosite(geosite_arg, file_proxy_host)
 		if code == 0 then
 			log("  - 解析[代理列表] Geosite 到代理域名表(blacklist)完成")
+			sys.call("touch " .. file_proxy_host .. "_geo")
 		else
 			log("  - 解析[代理列表] Geosite 到代理域名表(blacklist)失败！[" .. out .. "]")
 			success = false
@@ -486,6 +526,9 @@ if USE_PROXY_LIST == "1" and not fs.access(file_proxy_host) then
 	end
 end
 if USE_PROXY_LIST == "1" and is_file_nonzero(file_proxy_host) then
+	if proxy_geosite_flag then
+		log("  - [代理列表] Geosite 使用缓存结果，跳过重复解析")
+	end
 	local domain_set_name = "psw-proxylist"
 	tmp_lines = {
 		string.format("domain-set -name %s -file %s", domain_set_name, file_proxy_host)
@@ -623,7 +666,9 @@ if IS_SHUNT_NODE and not only_global then
 
 			SHUNT_LIST = SHUNT_LIST .. domain_list .. (_node_id:sub(1, 1) == "_" and "not-node" or "node")
 
-			log(string.format("  - Sing-Box/Xray分流规则(%s)使用分组：%s", s.remarks, REMOTE_GROUP or "默认"))
+			if _node_id ~= "_direct" and _node_id ~= "_blackhole" then
+				log(string.format("  - Sing-Box/Xray分流规则(%s)使用分组：%s", s.remarks, REMOTE_GROUP or "默认"))
+			end
 		end
 	end)
 
@@ -691,6 +736,10 @@ if IS_SHUNT_NODE and not only_global then
 		end
 	end
 
+	if USE_CACHE and USE_GEOVIEW == "1" and (geosite_direct_arg ~= "" or geosite_proxy_arg ~= "" or geosite_black_arg ~= "") then
+		log("  - [分流节点] Geosite 使用缓存结果，跳过重复解析")
+	end
+
 	if is_file_nonzero(shunt_direct_host) then
 		local domain_set_name = "psw-shunt-direct"
 		tmp_lines = {
@@ -740,6 +789,8 @@ if IS_SHUNT_NODE and not only_global then
 	end
 end
 
+table.insert(config_lines, "group-end")
+
 if #config_lines > 0 then
 	local f_out = io.open(TMP_CONF_FILE, "w")
 	for i = 1, #config_lines do
@@ -757,4 +808,8 @@ end
 
 fs.symlink(TMP_CONF_FILE, SMARTDNS_CONF)
 sys.call(string.format('echo "conf-file %s" >> /etc/smartdns/custom.conf', string.gsub(SMARTDNS_CONF, "passwall", "passwall*")))
-log("  - SmartDNS已作为Dnsmasq上游，如果你自行配置了错误的DNS流程，将会导致域名(直连/代理)分流失效！！！")
+if DNS_REDIRECT then
+	log("  - DNS 重定向直接使用 SmartDNS，DHCP 租约由 SmartDNS 自动加载。")
+else
+	log("  - SmartDNS已作为Dnsmasq上游，如果你自行配置了错误的DNS流程，将会导致域名(直连/代理)分流失效！！！")
+end
