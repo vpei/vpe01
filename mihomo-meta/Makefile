@@ -37,7 +37,7 @@ define Package/mihomo-meta
   URL:=https://wiki.metacubex.one
   DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle +ip-full +kmod-inet-diag +kmod-tun
   PROVIDES:=mihomo
-  CONFLICTS:=mihomo-alpha
+  CONFLICTS:=mihomo-meta
   VARIANT:=meta
   DEFAULT_VARIANT:=1
   ALTERNATIVES:=\
