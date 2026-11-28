@@ -1,29 +1,13 @@
 {
-	"admin/network/zerotier": {
+	"admin/vpn/zerotier": {
 		"title": "ZeroTier",
-		"order": 90,
+		"order": 30,
 		"action": {
-			"type": "firstchild"
+			"type": "view",
+			"path": "zerotier/overview"
 		},
 		"depends": {
-			"acl": [ "luci-app-zerotier" ],
-			"uci": { "zerotier": true }
-		}
-	},
-	"admin/network/zerotier/config": {
-		"title": "Configuration",
-		"order": 10,
-		"action": {
-			"type": "view",
-			"path": "zerotier/config"
-		}
-	},
-	"admin/network/zerotier/interface": {
-		"title": "Interface info",
-		"order": 20,
-		"action": {
-			"type": "view",
-			"path": "zerotier/interface"
+			"acl": [ "luci-app-zerotier" ]
 		}
 	}
 }

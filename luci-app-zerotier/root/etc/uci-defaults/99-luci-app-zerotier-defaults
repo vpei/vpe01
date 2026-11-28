@@ -1,0 +1,17 @@
+#!/bin/sh
+# First install: make sure /etc/config/zerotier has a global section so the
+# panel has something to read. Existing settings are never touched.
+
+[ -f /etc/config/zerotier ] || touch /etc/config/zerotier
+
+if ! uci -q get zerotier.global >/dev/null; then
+	uci set zerotier.global=zerotier
+	uci -q get zerotier.global.enabled >/dev/null || uci set zerotier.global.enabled='0'
+	uci commit zerotier
+fi
+
+rm -f /tmp/luci-indexcache* 2>/dev/null
+rm -rf /tmp/luci-modulecache/ 2>/dev/null
+[ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload 2>/dev/null
+
+exit 0
