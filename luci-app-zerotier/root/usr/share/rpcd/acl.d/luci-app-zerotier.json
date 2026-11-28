@@ -1,25 +1,17 @@
 {
 	"luci-app-zerotier": {
-		"description": "Grant access to the ZeroTier control panel",
+		"description": "Grant access to ZeroTier configuration",
 		"read": {
+			"file": {
+				"/sbin/ifconfig": [ "exec" ]
+			},
 			"ubus": {
 				"service": [ "list" ]
 			},
 			"uci": [ "zerotier" ]
 		},
 		"write": {
-			"ubus": {
-				"file": [ "exec" ],
-				"service": [ "restart", "event" ]
-			},
-			"uci": [ "zerotier" ],
-			"file": {
-				"/usr/bin/zerotier-cli": [ "exec" ],
-				"/usr/sbin/zerotier-cli": [ "exec" ],
-				"/etc/init.d/zerotier": [ "exec" ],
-				"/etc/init.d/firewall": [ "exec" ],
-				"/sbin/uci": [ "exec" ]
-			}
+			"uci": [ "zerotier" ]
 		}
 	}
 }
